@@ -68,8 +68,11 @@ class PDFMarkerApp:
         self.notebook.add(self.mark_frame, text=" 📌 标记 PDF ")
         self.apply_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.apply_frame, text=" 📄 应用标记 ")
+        self.verify_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.verify_frame, text=" ✅ Excel核对 ")
         self._setup_mark_tab()
         self._setup_apply_tab()
+        self._setup_verify_tab()
     # ══════════════════════════════════════════════════════════════════════
     # TAB 1 — MARK
     # ══════════════════════════════════════════════════════════════════════
@@ -1127,6 +1130,391 @@ class PDFMarkerApp:
                 os.unlink(p)
             except Exception:
                 pass
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TAB 3 — VERIFY EXCEL
+    # ══════════════════════════════════════════════════════════════════════
+    def _setup_verify_tab(self):
+        self.verify_pdf_path = None
+        self.verify_doc = None
+        self.verify_json_path = None
+        self.verify_markers = []
+        self.verify_orig_baselines = {}
+        self.verify_new_baselines = {}
+        self.verify_xlsx_path = None
+        self.verify_excel_rows = []   # list of list-of-str, one per data row
+        self.verify_results = {}      # {marker_id (1-based): 'correct'|'incorrect'|None}
+        self.verify_page_index = 0
+        self.verify_zoom = 1.5
+        self.verify_photo = None
+        self.verify_sx = 1.0
+        self.verify_sy = 1.0
+        self.verify_selected_id = None
+        self.verify_mode = "idle"
+
+        # ── Row 1: file selection ──────────────────────────────────────────
+        r1 = ttk.Frame(self.verify_frame)
+        r1.pack(fill=tk.X, padx=10, pady=(8, 2))
+        ttk.Button(r1, text="📊 选择 Excel", command=self._verify_open_xlsx).pack(side=tk.LEFT, padx=3)
+        self.lbl_verify_xlsx = ttk.Label(r1, text="未选择", foreground="gray")
+        self.lbl_verify_xlsx.pack(side=tk.LEFT, padx=4)
+        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(r1, text="📂 选择 PDF", command=self._verify_open_pdf).pack(side=tk.LEFT, padx=3)
+        self.lbl_verify_pdf = ttk.Label(r1, text="未选择", foreground="gray")
+        self.lbl_verify_pdf.pack(side=tk.LEFT, padx=4)
+        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(r1, text="📋 选择标记 JSON", command=self._verify_open_json).pack(side=tk.LEFT, padx=3)
+        self.lbl_verify_json = ttk.Label(r1, text="未选择", foreground="gray")
+        self.lbl_verify_json.pack(side=tk.LEFT, padx=4)
+
+        # ── Row 2: page navigation + baseline + status ────────────────────
+        r2 = ttk.Frame(self.verify_frame)
+        r2.pack(fill=tk.X, padx=10, pady=2)
+        self.btn_v_baseline = ttk.Button(r2, text="⊕ 设置基准点", command=self._verify_enter_baseline_mode, state=tk.DISABLED)
+        self.btn_v_baseline.pack(side=tk.LEFT, padx=3)
+        ttk.Separator(r2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(r2, text="◀", width=3, command=self._verify_prev_page).pack(side=tk.LEFT)
+        self.lbl_verify_page = ttk.Label(r2, text=" — / — ")
+        self.lbl_verify_page.pack(side=tk.LEFT)
+        ttk.Button(r2, text="▶", width=3, command=self._verify_next_page).pack(side=tk.LEFT)
+        ttk.Separator(r2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        self.lbl_verify_status = ttk.Label(r2, text="请先选择 Excel 文件", foreground="#2471a3")
+        self.lbl_verify_status.pack(side=tk.LEFT, padx=14)
+
+        # ── Main paned area ───────────────────────────────────────────────
+        main_pane = ttk.Panedwindow(self.verify_frame, orient=tk.HORIZONTAL)
+        main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=6)
+
+        left = ttk.Frame(main_pane)
+        right = ttk.Frame(main_pane, width=480)
+        main_pane.add(left, weight=3)
+        main_pane.add(right, weight=2)
+
+        # PDF canvas (left pane)
+        cf = ttk.Frame(left)
+        cf.pack(fill=tk.BOTH, expand=True)
+        self.verify_canvas = tk.Canvas(cf, bg="#404040", highlightthickness=0)
+        self.verify_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb_v = ttk.Scrollbar(cf, orient=tk.VERTICAL, command=self.verify_canvas.yview)
+        vsb_v.pack(side=tk.RIGHT, fill=tk.Y)
+        hsb_v = ttk.Scrollbar(left, orient=tk.HORIZONTAL, command=self.verify_canvas.xview)
+        hsb_v.pack(fill=tk.X, pady=(0, 4))
+        self.verify_canvas.configure(yscrollcommand=vsb_v.set, xscrollcommand=hsb_v.set)
+        self.verify_canvas.bind("<ButtonPress-1>", self._vc_press)
+
+        # Excel verify table (right pane)
+        hdr_frame = ttk.Frame(right)
+        hdr_frame.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(hdr_frame, text="Excel 内容核对", font=("Arial", 11, "bold")).pack(side=tk.LEFT)
+        ttk.Label(hdr_frame, text="  点击行→PDF定位  点击✓/✗列→标记状态", foreground="gray").pack(side=tk.LEFT, padx=6)
+
+        tree_frame = ttk.Frame(right)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        cols = ("id", "content", "correct", "incorrect")
+        self.verify_tree = ttk.Treeview(
+            tree_frame, columns=cols, show="headings", selectmode="browse"
+        )
+        self.verify_tree.heading("id", text="序号")
+        self.verify_tree.heading("content", text="内容预览")
+        self.verify_tree.heading("correct", text="✓ 正确")
+        self.verify_tree.heading("incorrect", text="✗ 错误")
+        self.verify_tree.column("id", width=46, anchor="center", stretch=False)
+        self.verify_tree.column("content", width=260, anchor="w")
+        self.verify_tree.column("correct", width=68, anchor="center", stretch=False)
+        self.verify_tree.column("incorrect", width=68, anchor="center", stretch=False)
+
+        ysb_vt = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.verify_tree.yview)
+        self.verify_tree.configure(yscrollcommand=ysb_vt.set)
+        self.verify_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ysb_vt.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Row color tags
+        self.verify_tree.tag_configure("correct",   background="#d5f5e3", foreground="#1e8449")
+        self.verify_tree.tag_configure("incorrect", background="#fadbd8", foreground="#c0392b")
+        self.verify_tree.tag_configure("normal",    background="white",   foreground="black")
+
+        self.verify_tree.bind("<Button-1>", self._on_verify_tree_click)
+
+    # ── file loaders ──────────────────────────────────────────────────────
+    def _verify_open_xlsx(self):
+        path = filedialog.askopenfilename(filetypes=[("Excel 文件", "*.xlsx *.xls")])
+        if not path:
+            return
+        wb = openpyxl.load_workbook(path, data_only=True)
+        ws = wb.active
+        self.verify_excel_rows = []
+        for row in ws.iter_rows(min_row=2):          # skip header row
+            row_data = [self._cell_display_text(cell) for cell in row]
+            self.verify_excel_rows.append(row_data)
+        self.verify_xlsx_path = path
+        self.verify_results = {}
+        self.lbl_verify_xlsx.config(text=os.path.basename(path), foreground="black")
+        self._refresh_verify_tree()
+        self._verify_status(f"Excel 已加载，共 {len(self.verify_excel_rows)} 行数据")
+
+    def _verify_open_pdf(self):
+        path = filedialog.askopenfilename(filetypes=[("PDF 文件", "*.pdf")])
+        if not path:
+            return
+        self.verify_pdf_path = path
+        self.verify_doc = fitz.open(path)
+        self.verify_page_index = 0
+        self.verify_new_baselines.clear()
+        self.lbl_verify_pdf.config(text=os.path.basename(path), foreground="black")
+        self._verify_refresh_baseline_btn()
+        self._verify_render()
+        self._verify_status("PDF 已加载")
+
+    def _verify_open_json(self):
+        path = filedialog.askopenfilename(filetypes=[("JSON 文件", "*.json")])
+        if not path:
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.verify_markers = data.get("markers", [])
+        self.verify_orig_baselines = {}
+        if "baselines" in data and isinstance(data["baselines"], dict):
+            for k, v in data["baselines"].items():
+                try:
+                    self.verify_orig_baselines[int(k)] = (float(v["x"]), float(v["y"]))
+                except Exception:
+                    pass
+        elif "baseline" in data:
+            try:
+                self.verify_orig_baselines[0] = (float(data["baseline"]["x"]), float(data["baseline"]["y"]))
+            except Exception:
+                pass
+        self.verify_json_path = path
+        self.lbl_verify_json.config(text=os.path.basename(path), foreground="black")
+        self._verify_refresh_baseline_btn()
+        self._verify_render()
+        self._verify_status(f"JSON 已加载，{len(self.verify_markers)} 个标记")
+
+    def _verify_refresh_baseline_btn(self):
+        if self.verify_doc and self.verify_markers:
+            self.btn_v_baseline.config(state=tk.NORMAL)
+        else:
+            self.btn_v_baseline.config(state=tk.DISABLED)
+
+    def _verify_enter_baseline_mode(self):
+        if not self.verify_doc:
+            return
+        self.verify_mode = "set_baseline"
+        self.verify_canvas.config(cursor="tcross")
+        self._verify_status(f"🎯 点击第 {self.verify_page_index + 1} 页对应的基准点位置")
+
+    def _vc_press(self, event):
+        if self.verify_mode != "set_baseline" or not self.verify_doc:
+            return
+        cx = self.verify_canvas.canvasx(event.x)
+        cy = self.verify_canvas.canvasy(event.y)
+        px = cx / self.verify_sx
+        py = cy / self.verify_sy
+        self.verify_new_baselines[self.verify_page_index] = (px, py)
+        self.verify_mode = "idle"
+        self.verify_canvas.config(cursor="arrow")
+        self._verify_render()
+        self._verify_status(f"✅ 第 {self.verify_page_index + 1} 页基准点已设置，标记已对齐")
+
+    # ── verify tree ───────────────────────────────────────────────────────
+    def _refresh_verify_tree(self):
+        if not hasattr(self, "verify_tree"):
+            return
+        for item in self.verify_tree.get_children():
+            self.verify_tree.delete(item)
+        for i, row_data in enumerate(self.verify_excel_rows):
+            mid = i + 1
+            # Build content preview from all non-empty cells
+            parts = [v for v in row_data if v and str(v).strip()]
+            content = "  |  ".join(str(p) for p in parts)
+            if len(content) > 60:
+                content = content[:60] + "…"
+            result = self.verify_results.get(mid)
+            correct_sym   = "☑" if result == "correct"   else "☐"
+            incorrect_sym = "☑" if result == "incorrect" else "☐"
+            tag = "correct" if result == "correct" else ("incorrect" if result == "incorrect" else "normal")
+            self.verify_tree.insert(
+                "", "end", iid=str(mid),
+                values=(mid, content, correct_sym, incorrect_sym),
+                tags=(tag,)
+            )
+        # restore selection
+        if self.verify_selected_id and self.verify_tree.exists(str(self.verify_selected_id)):
+            self.verify_tree.selection_set(str(self.verify_selected_id))
+            self.verify_tree.see(str(self.verify_selected_id))
+
+    def _on_verify_tree_click(self, event):
+        col  = self.verify_tree.identify_column(event.x)
+        item = self.verify_tree.identify_row(event.y)
+        if not item:
+            return
+        try:
+            mid = int(item)
+        except Exception:
+            return
+
+        if col == "#3":    # ✓ 正确列
+            cur = self.verify_results.get(mid)
+            self.verify_results[mid] = None if cur == "correct" else "correct"
+            self._refresh_verify_tree()
+            self._verify_render()
+            status = "✓ 已标记为正确" if self.verify_results[mid] == "correct" else "已取消正确标记"
+            self._verify_status(f"第 {mid} 行：{status}")
+        elif col == "#4":  # ✗ 错误列
+            cur = self.verify_results.get(mid)
+            self.verify_results[mid] = None if cur == "incorrect" else "incorrect"
+            self._refresh_verify_tree()
+            self._verify_render()
+            status = "✗ 已标记为错误" if self.verify_results[mid] == "incorrect" else "已取消错误标记"
+            self._verify_status(f"第 {mid} 行：{status}")
+        else:              # 点击其他列 → 导航到对应标记
+            self.verify_selected_id = mid
+            self.verify_tree.selection_set(item)
+            self._navigate_verify_to_marker(mid)
+
+    # ── PDF navigation ────────────────────────────────────────────────────
+    def _verify_marker_abs_pdf(self, m):
+        pidx = m["page"]
+        if pidx in self.verify_new_baselines:
+            nx, ny = self.verify_new_baselines[pidx]
+        elif pidx in self.verify_orig_baselines:
+            nx, ny = self.verify_orig_baselines[pidx]
+        else:
+            nx, ny = 0, 0
+        return nx + m["x"], ny + m["y"]
+
+    def _navigate_verify_to_marker(self, mid):
+        """Switch to the page of marker mid and scroll so the marker is centred."""
+        if not self.verify_doc or not self.verify_markers:
+            return
+        for m in self.verify_markers:
+            if m.get("id") != mid:
+                continue
+            page = m.get("page", 0)
+            if self.verify_page_index != page:
+                self.verify_page_index = page
+                self._verify_render()
+            # Compute canvas coordinates of marker top-left
+            ax, ay = self._verify_marker_abs_pdf(m)
+            cx = ax * self.verify_sx
+            cy = ay * self.verify_sy
+            mw = m["width"]  * self.verify_sx
+            mh = m["height"] * self.verify_sy
+            # Get scroll region extents
+            self.verify_canvas.update_idletasks()
+            sr = self.verify_canvas.cget("scrollregion")
+            try:
+                _, _, total_w, total_h = (float(v) for v in str(sr).split())
+            except Exception:
+                break
+            vw = self.verify_canvas.winfo_width()
+            vh = self.verify_canvas.winfo_height()
+            # Centre the marker
+            target_x = cx + mw / 2 - vw / 2
+            target_y = cy + mh / 2 - vh / 2
+            x_frac = max(0.0, min(1.0, target_x / total_w)) if total_w > 0 else 0.0
+            y_frac = max(0.0, min(1.0, target_y / total_h)) if total_h > 0 else 0.0
+            self.verify_canvas.xview_moveto(x_frac)
+            self.verify_canvas.yview_moveto(y_frac)
+            self._verify_status(f"已定位到标记 {mid}（第 {page + 1} 页）")
+            break
+
+    # ── rendering ─────────────────────────────────────────────────────────
+    def _verify_render(self):
+        if not self.verify_doc:
+            self.verify_canvas.delete("all")
+            self.lbl_verify_page.config(text=" — / — ")
+            return
+        page = self.verify_doc[self.verify_page_index]
+        pix  = page.get_pixmap(matrix=fitz.Matrix(self.verify_zoom, self.verify_zoom), alpha=False)
+        base = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert("RGBA")
+        pr   = page.rect
+        self.verify_sx = pix.width  / pr.width
+        self.verify_sy = pix.height / pr.height
+        sx, sy = self.verify_sx, self.verify_sy
+
+        draw = ImageDraw.Draw(base, "RGBA")
+        badge_font = self._load_font(9)
+
+        # Draw baseline crosshair
+        baseline = self.verify_new_baselines.get(self.verify_page_index) or \
+                   self.verify_orig_baselines.get(self.verify_page_index)
+        if baseline:
+            bx, by = baseline[0] * sx, baseline[1] * sy
+            r = 9
+            draw.ellipse((bx - r, by - r, bx + r, by + r), outline=(240, 180, 41, 255), width=2)
+            draw.line((bx - r - 5, by, bx + r + 5, by), fill=(240, 180, 41, 255), width=2)
+            draw.line((bx, by - r - 5, bx, by + r + 5), fill=(240, 180, 41, 255), width=2)
+
+        for m in self.verify_markers:
+            if m.get("page") != self.verify_page_index:
+                continue
+            ax, ay = self._verify_marker_abs_pdf(m)
+            x = int(round(ax * sx))
+            y = int(round(ay * sy))
+            w = max(1, int(round(m["width"]  * sx)))
+            h = max(1, int(round(m["height"] * sy)))
+            mid    = m["id"]
+            result = self.verify_results.get(mid)
+
+            # Colour by verification status
+            if result == "correct":
+                color = (39, 174, 96, 255)    # green
+            elif result == "incorrect":
+                color = (231, 76, 60, 255)    # red
+            else:
+                color = (41, 128, 185, 255)   # blue (default)
+
+            draw.rectangle((x, y, x + w, y + h), outline=color, width=2)
+
+            # Badge label
+            badge_w = max(22, len(str(mid)) * 7 + 6)
+            draw.rectangle((x, y - 18, x + badge_w, y), fill=color, outline=color)
+            if badge_font:
+                tb = draw.textbbox((0, 0), str(mid), font=badge_font)
+                tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                draw.text(
+                    (x + (badge_w - tw) / 2, y - 18 + (18 - th) / 2 - tb[1]),
+                    str(mid), font=badge_font, fill=(255, 255, 255, 255)
+                )
+            else:
+                draw.text((x + 4, y - 16), str(mid), fill=(255, 255, 255, 255))
+
+            # Draw ✓ / ✗ symbol inside the marker box
+            if result in ("correct", "incorrect") and w > 12 and h > 12:
+                sym      = "✓" if result == "correct" else "✗"
+                sym_size = max(10, min(h - 4, w - 4, 28))
+                sym_font = self._load_font(sym_size)
+                if sym_font:
+                    tb  = draw.textbbox((0, 0), sym, font=sym_font)
+                    tw2 = tb[2] - tb[0]
+                    th2 = tb[3] - tb[1]
+                    draw.text(
+                        (x + (w - tw2) // 2, y + (h - th2) // 2 - tb[1]),
+                        sym, font=sym_font, fill=color
+                    )
+
+        composed = base.convert("RGB")
+        self.verify_photo = ImageTk.PhotoImage(composed)
+        self.verify_canvas.config(scrollregion=(0, 0, composed.width, composed.height))
+        self.verify_canvas.delete("all")
+        self.verify_canvas.create_image(0, 0, anchor=tk.NW, image=self.verify_photo)
+        self.lbl_verify_page.config(text=f" {self.verify_page_index + 1} / {len(self.verify_doc)} ")
+
+    def _verify_prev_page(self):
+        if self.verify_doc and self.verify_page_index > 0:
+            self.verify_page_index -= 1
+            self._verify_render()
+
+    def _verify_next_page(self):
+        if self.verify_doc and self.verify_page_index < len(self.verify_doc) - 1:
+            self.verify_page_index += 1
+            self._verify_render()
+
+    def _verify_status(self, text):
+        self.lbl_verify_status.config(text=text)
+
 def main():
     root = tk.Tk()
     PDFMarkerApp(root)
