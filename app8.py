@@ -54,22 +54,88 @@ def find_unicode_font():
             return p
     return None
 UNICODE_FONT_PATH = find_unicode_font()
+
+# ─── UI Font Detection ────────────────────────────────────────────────────────
+def _ui_font_family():
+    system = platform.system()
+    if system == "Windows":
+        for f in ("Microsoft YaHei UI", "Segoe UI", "Arial"):
+            return f
+    elif system == "Darwin":
+        return "PingFang SC"
+    return "sans-serif"
+
+_FF = _ui_font_family()
+
 class PDFMarkerApp:
+    # ── colour palette ────────────────────────────────────────────────────
+    C_BG       = "#f0f2f5"
+    C_CARD     = "#ffffff"
+    C_PRIMARY  = "#2563eb"
+    C_ACCENT   = "#059669"
+    C_DANGER   = "#dc2626"
+    C_WARN     = "#d97706"
+    C_TEXT     = "#1e293b"
+    C_MUTED    = "#64748b"
+    C_BORDER   = "#cbd5e1"
+    C_CANVAS   = "#334155"
+    C_TREE_OK  = "#d1fae5"
+    C_TREE_NG  = "#fee2e2"
+
     def __init__(self, root):
         self.root = root
-        self.root.title("PDF 标记工具")
-        self.root.geometry("1500x920")
-        self.root.configure(bg="#ececec")
+        self.root.title("PDF 标记与核对工具")
+        self.root.geometry("1520x940")
+        self.root.configure(bg=self.C_BG)
+        self.root.minsize(1000, 600)
+
+        # ── ttk theme ─────────────────────────────────────────────────────
         style = ttk.Style()
-        style.configure("TNotebook.Tab", padding=[12, 4])
+        style.theme_use("clam")
+        _f9  = (_FF, 9)
+        _f9b = (_FF, 9, "bold")
+        _f10 = (_FF, 10)
+        _f10b = (_FF, 10, "bold")
+        _f11b = (_FF, 11, "bold")
+        style.configure(".", background=self.C_BG, foreground=self.C_TEXT, font=_f9)
+        style.configure("TNotebook", background=self.C_BG, tabmargins=[6, 6, 6, 0])
+        style.configure("TNotebook.Tab", background="#e2e8f0", foreground=self.C_TEXT,
+                         padding=[18, 7], font=_f10b)
+        style.map("TNotebook.Tab",
+                  background=[("selected", self.C_CARD)],
+                  foreground=[("selected", self.C_PRIMARY)])
+        style.configure("TFrame", background=self.C_BG)
+        style.configure("Card.TFrame", background=self.C_CARD)
+        style.configure("TLabel", background=self.C_BG, foreground=self.C_TEXT, font=_f9)
+        style.configure("Heading.TLabel", font=_f11b)
+        style.configure("Muted.TLabel", foreground=self.C_MUTED, font=_f9)
+        style.configure("Status.TLabel", background="#e2e8f0", foreground=self.C_MUTED,
+                         font=_f9, padding=[10, 5])
+        style.configure("TButton", padding=[10, 4], font=_f9)
+        style.configure("Primary.TButton", foreground=self.C_PRIMARY, font=_f9b)
+        style.configure("Accent.TButton",  foreground=self.C_ACCENT,  font=_f9b)
+        style.configure("Danger.TButton",  foreground=self.C_DANGER,  font=_f9b)
+        style.configure("Warn.TButton",    foreground=self.C_WARN,    font=_f9b)
+        style.configure("TLabelframe", background=self.C_BG)
+        style.configure("TLabelframe.Label", font=_f9b, foreground=self.C_TEXT)
+        style.configure("Treeview", font=_f9, rowheight=28, fieldbackground=self.C_CARD)
+        style.configure("Treeview.Heading", font=_f9b, background="#e2e8f0",
+                         foreground=self.C_TEXT)
+        style.map("Treeview", background=[("selected", "#dbeafe")],
+                  foreground=[("selected", self.C_PRIMARY)])
+        style.configure("TSeparator", background=self.C_BORDER)
+        style.configure("TPanedwindow", background=self.C_BG)
+        style.configure("TSpinbox", font=_f9)
+
+        # ── notebook ──────────────────────────────────────────────────────
         self.notebook = ttk.Notebook(root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        self.mark_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.mark_frame, text=" 📌 标记 PDF ")
-        self.apply_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.apply_frame, text=" 📄 应用标记 ")
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 8))
+        self.mark_frame   = ttk.Frame(self.notebook)
+        self.apply_frame  = ttk.Frame(self.notebook)
         self.verify_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.verify_frame, text=" ✅ Excel核对 ")
+        self.notebook.add(self.mark_frame,   text="  标记 PDF  ")
+        self.notebook.add(self.apply_frame,  text="  应用标记  ")
+        self.notebook.add(self.verify_frame, text="  Excel 核对  ")
         self._setup_mark_tab()
         self._setup_apply_tab()
         self._setup_verify_tab()
@@ -89,33 +155,46 @@ class PDFMarkerApp:
         self.mark_mode = "idle"
         self.drag_start = None
         self.rubber_band = None
+        # ── toolbar ────────────────────────────────────────────────────────
         r1 = ttk.Frame(self.mark_frame)
-        r1.pack(fill=tk.X, padx=10, pady=(8, 2))
-        ttk.Button(r1, text="📂 选择 PDF", command=self._mark_open_pdf).pack(side=tk.LEFT, padx=3)
-        self.lbl_mark_pdf = ttk.Label(r1, text="未选择文件", foreground="gray")
+        r1.pack(fill=tk.X, padx=12, pady=(10, 3))
+        ttk.Button(r1, text="选择 PDF", style="Primary.TButton",
+                   command=self._mark_open_pdf).pack(side=tk.LEFT, padx=(0, 4))
+        self.lbl_mark_pdf = ttk.Label(r1, text="未选择文件", style="Muted.TLabel")
         self.lbl_mark_pdf.pack(side=tk.LEFT, padx=6)
-        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        self.btn_m_baseline = ttk.Button(r1, text="⊕ 设置基准点", command=self._mark_enter_baseline_mode, state=tk.DISABLED)
+        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        self.btn_m_baseline = ttk.Button(r1, text="设置基准点",
+                   command=self._mark_enter_baseline_mode, state=tk.DISABLED)
         self.btn_m_baseline.pack(side=tk.LEFT, padx=3)
-        self.btn_m_start = ttk.Button(r1, text="▶ 开始标记", command=self._mark_start, state=tk.DISABLED)
+        self.btn_m_start = ttk.Button(r1, text="开始标记", style="Accent.TButton",
+                   command=self._mark_start, state=tk.DISABLED)
         self.btn_m_start.pack(side=tk.LEFT, padx=3)
-        self.btn_m_finish = ttk.Button(r1, text="✔ 完成标记", command=self._mark_finish, state=tk.DISABLED)
+        self.btn_m_finish = ttk.Button(r1, text="完成标记", style="Accent.TButton",
+                   command=self._mark_finish, state=tk.DISABLED)
         self.btn_m_finish.pack(side=tk.LEFT, padx=3)
-        self.btn_m_undo = ttk.Button(r1, text="↩ 撤销", command=self._mark_undo, state=tk.DISABLED)
+        self.btn_m_undo = ttk.Button(r1, text="撤销",
+                   command=self._mark_undo, state=tk.DISABLED)
         self.btn_m_undo.pack(side=tk.LEFT, padx=3)
-        self.btn_m_clear = ttk.Button(r1, text="🗑 清空", command=self._mark_clear, state=tk.DISABLED)
+        self.btn_m_clear = ttk.Button(r1, text="清空", style="Danger.TButton",
+                   command=self._mark_clear, state=tk.DISABLED)
         self.btn_m_clear.pack(side=tk.LEFT, padx=3)
+
+        # ── page nav + status ─────────────────────────────────────────────
         r2 = ttk.Frame(self.mark_frame)
-        r2.pack(fill=tk.X, padx=10, pady=2)
-        ttk.Button(r2, text="◀", width=3, command=self._mark_prev_page).pack(side=tk.LEFT)
+        r2.pack(fill=tk.X, padx=12, pady=3)
+        ttk.Button(r2, text="<", width=3, command=self._mark_prev_page).pack(side=tk.LEFT)
         self.lbl_mark_page = ttk.Label(r2, text=" — / — ")
-        self.lbl_mark_page.pack(side=tk.LEFT)
-        ttk.Button(r2, text="▶", width=3, command=self._mark_next_page).pack(side=tk.LEFT)
-        self.lbl_mark_status = ttk.Label(r2, text="请先选择 PDF 文件", foreground="#2471a3")
+        self.lbl_mark_page.pack(side=tk.LEFT, padx=2)
+        ttk.Button(r2, text=">", width=3, command=self._mark_next_page).pack(side=tk.LEFT)
+        self.lbl_mark_status = ttk.Label(r2, text="请先选择 PDF 文件",
+                                          foreground=self.C_PRIMARY)
         self.lbl_mark_status.pack(side=tk.LEFT, padx=20)
+
+        # ── canvas ────────────────────────────────────────────────────────
         cf = ttk.Frame(self.mark_frame)
-        cf.pack(fill=tk.BOTH, expand=True, padx=10, pady=6)
-        self.mark_canvas = tk.Canvas(cf, bg="#404040", cursor="crosshair", highlightthickness=0)
+        cf.pack(fill=tk.BOTH, expand=True, padx=12, pady=(3, 8))
+        self.mark_canvas = tk.Canvas(cf, bg=self.C_CANVAS, cursor="crosshair",
+                                      highlightthickness=0)
         self.mark_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb = ttk.Scrollbar(cf, orient=tk.VERTICAL, command=self.mark_canvas.yview)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
@@ -142,7 +221,7 @@ class PDFMarkerApp:
         self.btn_m_clear.config(state=tk.DISABLED)
         self.mark_mode = "idle"
         self._mark_render()
-        self._mark_status("PDF 已加载 → 每一页都可单独设置基准点")
+        self._mark_status("PDF 已加载, 每页可单独设置基准点")
     def _mark_prev_page(self):
         if self.mark_doc and self.mark_page_index > 0:
             self.mark_page_index -= 1
@@ -158,7 +237,7 @@ class PDFMarkerApp:
             return
         self.mark_mode = "set_baseline"
         self.mark_canvas.config(cursor="tcross")
-        self._mark_status(f"🎯 基准点模式：请在第 {self.mark_page_index + 1} 页点击一个参考位置")
+        self._mark_status(f"基准点模式: 请在第 {self.mark_page_index + 1} 页点击一个参考位置")
     def _mark_start(self):
         if not self.mark_doc:
             return
@@ -171,7 +250,7 @@ class PDFMarkerApp:
         self.btn_m_finish.config(state=tk.NORMAL)
         self.btn_m_undo.config(state=tk.NORMAL)
         self.btn_m_clear.config(state=tk.NORMAL)
-        self._mark_status(f"✏ 标记模式：第 {self.mark_page_index + 1} 页可拖拽画出矩形区域")
+        self._mark_status(f"标记模式: 第 {self.mark_page_index + 1} 页 — 拖拽画出矩形区域")
     def _mark_undo(self):
         if self.markers:
             self.markers.pop()
@@ -194,7 +273,7 @@ class PDFMarkerApp:
             self.mark_canvas.config(cursor="crosshair")
             self._mark_render()
             self.btn_m_start.config(state=tk.NORMAL)
-            self._mark_status(f"✅ 第 {self.mark_page_index + 1} 页基准点已设置 ({pdf_x:.1f}, {pdf_y:.1f})")
+            self._mark_status(f"第 {self.mark_page_index + 1} 页基准点已设置 ({pdf_x:.1f}, {pdf_y:.1f})")
         elif self.mark_mode == "marking":
             self.drag_start = (cx, cy)
             self.rubber_band = self.mark_canvas.create_rectangle(
@@ -327,8 +406,9 @@ class PDFMarkerApp:
         self.btn_m_start.config(state=tk.NORMAL if self.mark_page_index in self.mark_baselines else tk.DISABLED)
         self.btn_m_finish.config(state=tk.DISABLED)
         self._update_mark_controls()
-        messagebox.showinfo("保存成功", f"✔ {len(self.markers)} 个标记已保存：\n\nJSON: {json_path}\nExcel: {xlsx_path}")
-        self._mark_status(f"✔ 已保存 {len(self.markers)} 个标记")
+        messagebox.showinfo("保存成功",
+            f"{len(self.markers)} 个标记已保存:\n\nJSON: {json_path}\nExcel: {xlsx_path}")
+        self._mark_status(f"已保存 {len(self.markers)} 个标记")
     def _mark_status(self, text):
         self.lbl_mark_status.config(text=text)
     # ══════════════════════════════════════════════════════════════════════
@@ -352,44 +432,56 @@ class PDFMarkerApp:
         self._tmp_files = []
         self.apply_selected_id = None
         self.apply_font_sizes = {}
+        # ── toolbar row 1: file selection ─────────────────────────────────
         r1 = ttk.Frame(self.apply_frame)
-        r1.pack(fill=tk.X, padx=10, pady=(8, 2))
-        ttk.Button(r1, text="📂 选择 PDF", command=self._apply_open_pdf).pack(side=tk.LEFT, padx=3)
-        self.lbl_apply_pdf = ttk.Label(r1, text="未选择", foreground="gray")
+        r1.pack(fill=tk.X, padx=12, pady=(10, 3))
+        ttk.Button(r1, text="选择 PDF", style="Primary.TButton",
+                   command=self._apply_open_pdf).pack(side=tk.LEFT, padx=(0, 4))
+        self.lbl_apply_pdf = ttk.Label(r1, text="未选择", style="Muted.TLabel")
         self.lbl_apply_pdf.pack(side=tk.LEFT, padx=4)
-        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        ttk.Button(r1, text="📋 选择标记 JSON", command=self._apply_open_json).pack(side=tk.LEFT, padx=3)
-        self.lbl_apply_json = ttk.Label(r1, text="未选择", foreground="gray")
+        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Button(r1, text="选择标记 JSON", style="Primary.TButton",
+                   command=self._apply_open_json).pack(side=tk.LEFT, padx=3)
+        self.lbl_apply_json = ttk.Label(r1, text="未选择", style="Muted.TLabel")
         self.lbl_apply_json.pack(side=tk.LEFT, padx=4)
-        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        ttk.Button(r1, text="📊 选择 Excel（可选）", command=self._apply_open_xlsx).pack(side=tk.LEFT, padx=3)
-        self.lbl_apply_xlsx = ttk.Label(r1, text="未选择", foreground="gray")
+        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Button(r1, text="选择 Excel (可选)",
+                   command=self._apply_open_xlsx).pack(side=tk.LEFT, padx=3)
+        self.lbl_apply_xlsx = ttk.Label(r1, text="未选择", style="Muted.TLabel")
         self.lbl_apply_xlsx.pack(side=tk.LEFT, padx=4)
+
+        # ── toolbar row 2: actions ────────────────────────────────────────
         r2 = ttk.Frame(self.apply_frame)
-        r2.pack(fill=tk.X, padx=10, pady=2)
-        self.btn_a_baseline = ttk.Button(r2, text="⊕ 设置基准点", command=self._apply_enter_baseline_mode, state=tk.DISABLED)
-        self.btn_a_baseline.pack(side=tk.LEFT, padx=3)
-        self.lbl_a_baseline = ttk.Label(r2, text="未设置基准点", foreground="gray")
+        r2.pack(fill=tk.X, padx=12, pady=3)
+        self.btn_a_baseline = ttk.Button(r2, text="设置基准点",
+                   command=self._apply_enter_baseline_mode, state=tk.DISABLED)
+        self.btn_a_baseline.pack(side=tk.LEFT, padx=(0, 4))
+        self.lbl_a_baseline = ttk.Label(r2, text="未设置基准点", style="Muted.TLabel")
         self.lbl_a_baseline.pack(side=tk.LEFT, padx=6)
-        ttk.Separator(r2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        ttk.Button(r2, text="◀", width=3, command=self._apply_prev_page).pack(side=tk.LEFT)
+        ttk.Separator(r2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Button(r2, text="<", width=3, command=self._apply_prev_page).pack(side=tk.LEFT)
         self.lbl_apply_page = ttk.Label(r2, text=" — / — ")
-        self.lbl_apply_page.pack(side=tk.LEFT)
-        ttk.Button(r2, text="▶", width=3, command=self._apply_next_page).pack(side=tk.LEFT)
-        ttk.Separator(r2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        ttk.Button(r2, text="💾 导出带标记 PDF", command=self._apply_export_pdf).pack(side=tk.LEFT, padx=3)
-        ttk.Button(r2, text="📸 截图存入 Excel 第4列", command=self._apply_screenshot_to_excel).pack(side=tk.LEFT, padx=3)
-        self.lbl_apply_status = ttk.Label(r2, text="请选择 PDF 和标记 JSON", foreground="#2471a3")
+        self.lbl_apply_page.pack(side=tk.LEFT, padx=2)
+        ttk.Button(r2, text=">", width=3, command=self._apply_next_page).pack(side=tk.LEFT)
+        ttk.Separator(r2, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Button(r2, text="导出带标记 PDF", style="Accent.TButton",
+                   command=self._apply_export_pdf).pack(side=tk.LEFT, padx=3)
+        ttk.Button(r2, text="截图存入 Excel 第4列",
+                   command=self._apply_screenshot_to_excel).pack(side=tk.LEFT, padx=3)
+        self.lbl_apply_status = ttk.Label(r2, text="请选择 PDF 和标记 JSON",
+                                           foreground=self.C_PRIMARY)
         self.lbl_apply_status.pack(side=tk.LEFT, padx=14)
+
+        # ── main pane ─────────────────────────────────────────────────────
         main_pane = ttk.Panedwindow(self.apply_frame, orient=tk.HORIZONTAL)
-        main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=6)
+        main_pane.pack(fill=tk.BOTH, expand=True, padx=12, pady=(3, 8))
         left = ttk.Frame(main_pane)
         right = ttk.Frame(main_pane, width=420)
         main_pane.add(left, weight=4)
         main_pane.add(right, weight=1)
         cf = ttk.Frame(left)
         cf.pack(fill=tk.BOTH, expand=True)
-        self.apply_canvas = tk.Canvas(cf, bg="#404040", highlightthickness=0)
+        self.apply_canvas = tk.Canvas(cf, bg=self.C_CANVAS, highlightthickness=0)
         self.apply_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb = ttk.Scrollbar(cf, orient=tk.VERTICAL, command=self.apply_canvas.yview)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
@@ -398,7 +490,7 @@ class PDFMarkerApp:
         self.apply_canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         self.apply_canvas.bind("<ButtonPress-1>", self._ac_press)
         # Right editor panel
-        ttk.Label(right, text="第3列手动修正", font=("Arial", 11, "bold")).pack(anchor="w", pady=(0, 4))
+        ttk.Label(right, text="第3列手动修正", style="Heading.TLabel").pack(anchor="w", pady=(0, 6))
         top_tools = ttk.Frame(right)
         top_tools.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(top_tools, text="刷新列表", command=self._refresh_apply_tree).pack(side=tk.LEFT, padx=2)
@@ -490,7 +582,7 @@ class PDFMarkerApp:
         self._apply_refresh_baseline_btn()
         self._refresh_apply_tree()
         self._apply_render()
-        self._apply_status(f"JSON 已加载，{len(self.apply_markers)} 个标记 → 可手动修正第 3 列内容")
+        self._apply_status(f"JSON 已加载, {len(self.apply_markers)} 个标记 — 可手动修正第3列内容")
     def _apply_open_xlsx(self):
         path = filedialog.askopenfilename(filetypes=[("Excel 文件", "*.xlsx *.xls")])
         if not path:
@@ -516,7 +608,7 @@ class PDFMarkerApp:
             return
         self.apply_mode = "set_baseline"
         self.apply_canvas.config(cursor="tcross")
-        self._apply_status(f"🎯 点击第 {self.apply_page_index + 1} 页对应的基准点位置")
+        self._apply_status(f"基准点模式: 点击第 {self.apply_page_index + 1} 页对应的基准点位置")
     def _ac_press(self, event):
         if self.apply_mode != "set_baseline" or not self.apply_doc:
             return
@@ -528,7 +620,7 @@ class PDFMarkerApp:
         self.apply_mode = "idle"
         self.apply_canvas.config(cursor="arrow")
         self._apply_render()
-        self._apply_status(f"✅ 第 {self.apply_page_index + 1} 页基准点已设置，标记已对齐到新位置")
+        self._apply_status(f"第 {self.apply_page_index + 1} 页基准点已设置, 标记已对齐")
     def _marker_abs_pdf(self, m):
         pidx = m["page"]
         if pidx in self.apply_new_baselines:
@@ -1009,7 +1101,7 @@ class PDFMarkerApp:
         if not self.apply_doc:
             self.apply_canvas.delete("all")
             self.lbl_apply_page.config(text=" — / — ")
-            self.lbl_a_baseline.config(text="未设置基准点", foreground="gray")
+            self.lbl_a_baseline.config(text="未设置基准点", foreground=self.C_MUTED)
             return
         composed, sx, sy = self._compose_page_image(self.apply_page_index, zoom=self.apply_zoom)
         if composed is None:
@@ -1024,9 +1116,9 @@ class PDFMarkerApp:
         self.lbl_apply_page.config(text=f" {self.apply_page_index + 1} / {len(self.apply_doc)} ")
         baseline = self.apply_new_baselines.get(self.apply_page_index) or self.apply_orig_baselines.get(self.apply_page_index)
         if baseline:
-            self.lbl_a_baseline.config(text=f"当前页基准点: ({baseline[0]:.1f}, {baseline[1]:.1f})", foreground="#1a5276")
+            self.lbl_a_baseline.config(text=f"当前页基准点: ({baseline[0]:.1f}, {baseline[1]:.1f})", foreground=self.C_TEXT)
         else:
-            self.lbl_a_baseline.config(text="未设置基准点", foreground="gray")
+            self.lbl_a_baseline.config(text="未设置基准点", foreground=self.C_MUTED)
         self._refresh_apply_tree()
     def _apply_prev_page(self):
         if self.apply_doc and self.apply_page_index > 0:
@@ -1157,42 +1249,44 @@ class PDFMarkerApp:
         self.verify_col4_photo = None  # PhotoImage kept to prevent GC
         self._current_verify_col4_mid = None
 
-        # ── Row 1: file selection
+        # ── Row 1: file selection ─────────────────────────────────────────
         r1 = ttk.Frame(self.verify_frame)
-        r1.pack(fill=tk.X, padx=10, pady=(8, 2))
-        ttk.Button(r1, text="📊 选择 Excel",       command=self._verify_open_xlsx).pack(side=tk.LEFT, padx=3)
-        self.lbl_verify_xlsx = ttk.Label(r1, text="未选择", foreground="gray")
+        r1.pack(fill=tk.X, padx=12, pady=(10, 3))
+        ttk.Button(r1, text="选择 Excel", style="Primary.TButton",
+                   command=self._verify_open_xlsx).pack(side=tk.LEFT, padx=(0, 4))
+        self.lbl_verify_xlsx = ttk.Label(r1, text="未选择", style="Muted.TLabel")
         self.lbl_verify_xlsx.pack(side=tk.LEFT, padx=4)
-        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        ttk.Button(r1, text="📂 选择 PDF",         command=self._verify_open_pdf).pack(side=tk.LEFT, padx=3)
-        self.lbl_verify_pdf = ttk.Label(r1, text="未选择", foreground="gray")
+        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Button(r1, text="选择 PDF", style="Primary.TButton",
+                   command=self._verify_open_pdf).pack(side=tk.LEFT, padx=3)
+        self.lbl_verify_pdf = ttk.Label(r1, text="未选择", style="Muted.TLabel")
         self.lbl_verify_pdf.pack(side=tk.LEFT, padx=4)
-        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        ttk.Button(r1, text="📋 选择标记 JSON",    command=self._verify_open_json).pack(side=tk.LEFT, padx=3)
-        self.lbl_verify_json = ttk.Label(r1, text="未选择", foreground="gray")
+        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Button(r1, text="选择标记 JSON", style="Primary.TButton",
+                   command=self._verify_open_json).pack(side=tk.LEFT, padx=3)
+        self.lbl_verify_json = ttk.Label(r1, text="未选择", style="Muted.TLabel")
         self.lbl_verify_json.pack(side=tk.LEFT, padx=4)
-        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        ttk.Button(r1, text="🪟 打开PDF预览窗口",  command=self._open_verify_pdf_window).pack(side=tk.LEFT, padx=3)
+        ttk.Separator(r1, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        ttk.Button(r1, text="打开 PDF 预览",
+                   command=self._open_verify_pdf_window).pack(side=tk.LEFT, padx=3)
 
-        # ── Row 2: status bar
-        r2 = ttk.Frame(self.verify_frame)
-        r2.pack(fill=tk.X, padx=10, pady=(0, 4))
-        self.lbl_verify_status = ttk.Label(r2, text="请先选择 Excel 文件", foreground="#2471a3")
-        self.lbl_verify_status.pack(side=tk.LEFT)
+        # ── Row 2: status bar ─────────────────────────────────────────────
+        self.lbl_verify_status = ttk.Label(self.verify_frame, text="请先选择 Excel 文件",
+                                            style="Status.TLabel")
+        self.lbl_verify_status.pack(fill=tk.X, padx=12, pady=(0, 4))
 
         # ── Main area: vertical split ─────────────────────────────────────
         main_v = ttk.PanedWindow(self.verify_frame, orient=tk.VERTICAL)
-        main_v.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 8))
+        main_v.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 8))
 
-        # Top: treeview list
         list_frame = ttk.Frame(main_v)
         main_v.add(list_frame, weight=1)
 
         tree_hdr = ttk.Frame(list_frame)
-        tree_hdr.pack(fill=tk.X, pady=(2, 2))
-        ttk.Label(tree_hdr, text="核对列表", font=("Arial", 10, "bold")).pack(side=tk.LEFT)
-        ttk.Label(tree_hdr, text="  点击行 → 展开第3/4列对比 + PDF自动定位",
-                  foreground="gray").pack(side=tk.LEFT)
+        tree_hdr.pack(fill=tk.X, pady=(2, 4))
+        ttk.Label(tree_hdr, text="核对列表", style="Heading.TLabel").pack(side=tk.LEFT)
+        ttk.Label(tree_hdr, text="  点击行: 展开第3/4列对比;  已打开预览时自动定位到标记",
+                  style="Muted.TLabel").pack(side=tk.LEFT, padx=8)
 
         tree_frame = ttk.Frame(list_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -1212,48 +1306,49 @@ class PDFMarkerApp:
         self.verify_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         ysb_vt.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self.verify_tree.tag_configure("correct",   background="#d5f5e3", foreground="#1e8449")
-        self.verify_tree.tag_configure("incorrect", background="#fadbd8", foreground="#c0392b")
-        self.verify_tree.tag_configure("normal",    background="white",   foreground="black")
+        self.verify_tree.tag_configure("correct",   background=self.C_TREE_OK, foreground=self.C_ACCENT)
+        self.verify_tree.tag_configure("incorrect", background=self.C_TREE_NG, foreground=self.C_DANGER)
+        self.verify_tree.tag_configure("normal",    background=self.C_CARD,    foreground=self.C_TEXT)
         self.verify_tree.bind("<<TreeviewSelect>>", self._on_verify_tree_select)
 
         # Bottom: comparison panel (col3 text vs col4 image)
-        cmp_outer = ttk.LabelFrame(main_v, text="当前行核对（第3列 vs 第4列截图）")
+        cmp_outer = ttk.LabelFrame(main_v, text="当前行核对 (第3列文字 vs 第4列截图)")
         main_v.add(cmp_outer, weight=2)
 
         act_bar = ttk.Frame(cmp_outer)
-        act_bar.pack(fill=tk.X, padx=6, pady=(4, 2))
-        self.lbl_verify_row = ttk.Label(act_bar, text="未选择行", font=("Arial", 10, "bold"))
+        act_bar.pack(fill=tk.X, padx=8, pady=(6, 3))
+        self.lbl_verify_row = ttk.Label(act_bar, text="未选择行", style="Heading.TLabel")
         self.lbl_verify_row.pack(side=tk.LEFT)
-        ttk.Button(act_bar, text="← 上一行",
-                   command=self._verify_prev_row).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(act_bar, text="下一行 →",
-                   command=self._verify_next_row).pack(side=tk.RIGHT, padx=2)
-        ttk.Separator(act_bar, orient=tk.VERTICAL).pack(side=tk.RIGHT, fill=tk.Y, padx=6)
-        ttk.Button(act_bar, text="✗ 错误",
+        ttk.Button(act_bar, text="< 上一行",
+                   command=self._verify_prev_row).pack(side=tk.RIGHT, padx=3)
+        ttk.Button(act_bar, text="下一行 >",
+                   command=self._verify_next_row).pack(side=tk.RIGHT, padx=3)
+        ttk.Separator(act_bar, orient=tk.VERTICAL).pack(side=tk.RIGHT, fill=tk.Y, padx=8)
+        ttk.Button(act_bar, text="标记错误", style="Danger.TButton",
                    command=lambda: self._verify_set_result("incorrect")).pack(side=tk.RIGHT, padx=4)
-        ttk.Button(act_bar, text="✓ 正确",
+        ttk.Button(act_bar, text="标记正确", style="Accent.TButton",
                    command=lambda: self._verify_set_result("correct")).pack(side=tk.RIGHT, padx=4)
 
         sides = ttk.Frame(cmp_outer)
-        sides.pack(fill=tk.BOTH, expand=True, padx=6, pady=(2, 6))
+        sides.pack(fill=tk.BOTH, expand=True, padx=8, pady=(2, 8))
         sides.columnconfigure(0, weight=1)
         sides.columnconfigure(1, weight=1)
         sides.rowconfigure(0, weight=1)
 
-        col3_frame = ttk.LabelFrame(sides, text="第3列（文字内容）")
-        col3_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 3))
+        col3_frame = ttk.LabelFrame(sides, text="第3列 - 文字内容")
+        col3_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
         self.verify_col3_text = tk.Text(col3_frame, wrap="word", state="disabled",
-                                         bg="#f8f9fa", font=("Arial", 13))
+                                         bg=self.C_CARD, font=(_FF, 13),
+                                         relief="flat", padx=8, pady=6)
         col3_sb = ttk.Scrollbar(col3_frame, orient=tk.VERTICAL,
                                  command=self.verify_col3_text.yview)
         self.verify_col3_text.configure(yscrollcommand=col3_sb.set)
         self.verify_col3_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         col3_sb.pack(side=tk.RIGHT, fill=tk.Y)
 
-        col4_frame = ttk.LabelFrame(sides, text="第4列（截图）")
-        col4_frame.grid(row=0, column=1, sticky="nsew", padx=(3, 0))
-        self.verify_col4_canvas = tk.Canvas(col4_frame, bg="#e8e8e8", highlightthickness=0)
+        col4_frame = ttk.LabelFrame(sides, text="第4列 - 截图")
+        col4_frame.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
+        self.verify_col4_canvas = tk.Canvas(col4_frame, bg="#f1f5f9", highlightthickness=0)
         self.verify_col4_canvas.pack(fill=tk.BOTH, expand=True)
         self.verify_col4_canvas.bind("<Configure>", self._on_verify_col4_resize)
 
@@ -1350,32 +1445,37 @@ class PDFMarkerApp:
             self.verify_pdf_window.focus_force()
             return
         win = tk.Toplevel(self.root)
-        win.title("PDF 预览")
-        win.geometry("940x740")
+        win.title("PDF 预览 — 核对结果")
+        win.geometry("960x760")
+        win.configure(bg=self.C_BG)
         win.protocol("WM_DELETE_WINDOW", self._on_verify_pdf_window_close)
         self.verify_pdf_window = win
 
         tb = ttk.Frame(win)
-        tb.pack(fill=tk.X, padx=8, pady=4)
-        ttk.Button(tb, text="⊕ 设置基准点",
-                   command=self._verify_enter_baseline_mode).pack(side=tk.LEFT, padx=3)
-        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
-        ttk.Button(tb, text="◀", width=3, command=self._verify_prev_page).pack(side=tk.LEFT)
+        tb.pack(fill=tk.X, padx=10, pady=(8, 4))
+        ttk.Button(tb, text="设置基准点",
+                   command=self._verify_enter_baseline_mode).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(tb, text="<", width=3, command=self._verify_prev_page).pack(side=tk.LEFT)
         self.lbl_verify_page = ttk.Label(tb, text=" — / — ")
-        self.lbl_verify_page.pack(side=tk.LEFT)
-        ttk.Button(tb, text="▶", width=3, command=self._verify_next_page).pack(side=tk.LEFT)
-        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6)
-        ttk.Button(tb, text="放大 +", command=self._verify_zoom_in).pack(side=tk.LEFT, padx=2)
-        ttk.Button(tb, text="缩小 -", command=self._verify_zoom_out).pack(side=tk.LEFT, padx=2)
+        self.lbl_verify_page.pack(side=tk.LEFT, padx=2)
+        ttk.Button(tb, text=">", width=3, command=self._verify_next_page).pack(side=tk.LEFT)
+        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(tb, text="放大", command=self._verify_zoom_in).pack(side=tk.LEFT, padx=2)
+        ttk.Button(tb, text="缩小", command=self._verify_zoom_out).pack(side=tk.LEFT, padx=2)
+        ttk.Separator(tb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        ttk.Button(tb, text="导出核对结果 PDF", style="Accent.TButton",
+                   command=self._verify_export_pdf).pack(side=tk.LEFT, padx=3)
 
         cf = ttk.Frame(win)
-        cf.pack(fill=tk.BOTH, expand=True, padx=8)
-        self.verify_canvas = tk.Canvas(cf, bg="#404040", highlightthickness=0, cursor="arrow")
+        cf.pack(fill=tk.BOTH, expand=True, padx=10)
+        self.verify_canvas = tk.Canvas(cf, bg=self.C_CANVAS, highlightthickness=0,
+                                        cursor="arrow")
         self.verify_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb = ttk.Scrollbar(cf, orient=tk.VERTICAL, command=self.verify_canvas.yview)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         hsb = ttk.Scrollbar(win, orient=tk.HORIZONTAL, command=self.verify_canvas.xview)
-        hsb.pack(fill=tk.X, padx=8, pady=(0, 6))
+        hsb.pack(fill=tk.X, padx=10, pady=(0, 8))
         self.verify_canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         self.verify_canvas.bind("<ButtonPress-1>", self._vc_press)
         self.verify_mode = "idle"
@@ -1392,7 +1492,7 @@ class PDFMarkerApp:
             return
         self.verify_mode = "set_baseline"
         self.verify_canvas.config(cursor="tcross")
-        self._verify_status(f"🎯 点击第 {self.verify_page_index + 1} 页对应的基准点位置")
+        self._verify_status(f"基准点模式: 请点击第 {self.verify_page_index + 1} 页的基准点位置")
 
     def _vc_press(self, event):
         if self.verify_mode != "set_baseline" or not self.verify_doc or not self.verify_canvas:
@@ -1405,7 +1505,7 @@ class PDFMarkerApp:
         self.verify_mode = "idle"
         self.verify_canvas.config(cursor="arrow")
         self._verify_render()
-        self._verify_status(f"✅ 第 {self.verify_page_index + 1} 页基准点已设置，标记已对齐")
+        self._verify_status(f"第 {self.verify_page_index + 1} 页基准点已设置, 标记已对齐")
 
     def _verify_zoom_in(self):
         self.verify_zoom = min(4.0, self.verify_zoom + 0.25)
@@ -1414,6 +1514,93 @@ class PDFMarkerApp:
     def _verify_zoom_out(self):
         self.verify_zoom = max(0.5, self.verify_zoom - 0.25)
         self._verify_render()
+
+    def _verify_export_pdf(self):
+        """Export all pages with colour-coded verification markers as a new PDF."""
+        if not self.verify_doc:
+            messagebox.showwarning("提示", "请先加载 PDF 文件")
+            return
+        save_path = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF 文件", "*.pdf")],
+            title="保存核对结果 PDF"
+        )
+        if not save_path:
+            return
+        out = fitz.open()
+        for pidx in range(len(self.verify_doc)):
+            composed = self._verify_compose_page(pidx)
+            if composed is None:
+                continue
+            buf = io.BytesIO()
+            composed.save(buf, format="PNG")
+            page = out.new_page(width=composed.width, height=composed.height)
+            page.insert_image(page.rect, stream=buf.getvalue(),
+                              keep_proportion=False, overlay=True)
+        out.save(save_path)
+        out.close()
+        messagebox.showinfo("导出成功", f"核对结果 PDF 已保存:\n{save_path}")
+        self._verify_status(f"已导出核对结果 PDF")
+
+    def _verify_compose_page(self, page_index):
+        """Render a single page with coloured verification markers (PIL Image)."""
+        if not self.verify_doc:
+            return None
+        page = self.verify_doc[page_index]
+        z = self.verify_zoom
+        pix  = page.get_pixmap(matrix=fitz.Matrix(z, z), alpha=False)
+        base = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert("RGBA")
+        pr   = page.rect
+        sx = pix.width  / pr.width
+        sy = pix.height / pr.height
+        draw = ImageDraw.Draw(base, "RGBA")
+        badge_font = self._load_font(9)
+
+        baseline = (self.verify_new_baselines.get(page_index) or
+                    self.verify_orig_baselines.get(page_index))
+        if baseline:
+            bx, by = baseline[0] * sx, baseline[1] * sy
+            r = 9
+            draw.ellipse((bx - r, by - r, bx + r, by + r), outline=(240, 180, 41, 255), width=2)
+            draw.line((bx - r - 5, by, bx + r + 5, by), fill=(240, 180, 41, 255), width=2)
+            draw.line((bx, by - r - 5, bx, by + r + 5), fill=(240, 180, 41, 255), width=2)
+
+        for m in self.verify_markers:
+            if m.get("page") != page_index:
+                continue
+            ax, ay = self._verify_marker_abs_pdf(m)
+            x = int(round(ax * sx))
+            y = int(round(ay * sy))
+            w = max(1, int(round(m["width"]  * sx)))
+            h = max(1, int(round(m["height"] * sy)))
+            mid    = m["id"]
+            result = self.verify_results.get(mid)
+            if result == "correct":
+                color = (39, 174, 96, 255)
+            elif result == "incorrect":
+                color = (231, 76, 60, 255)
+            else:
+                color = (41, 128, 185, 255)
+            draw.rectangle((x, y, x + w, y + h), outline=color, width=2)
+            badge_w = max(22, len(str(mid)) * 7 + 6)
+            draw.rectangle((x, y - 18, x + badge_w, y), fill=color, outline=color)
+            if badge_font:
+                tb = draw.textbbox((0, 0), str(mid), font=badge_font)
+                tw, th = tb[2] - tb[0], tb[3] - tb[1]
+                draw.text((x + (badge_w - tw) / 2, y - 18 + (18 - th) / 2 - tb[1]),
+                          str(mid), font=badge_font, fill=(255, 255, 255, 255))
+            else:
+                draw.text((x + 4, y - 16), str(mid), fill=(255, 255, 255, 255))
+            if result in ("correct", "incorrect") and w > 12 and h > 12:
+                sym      = "✓" if result == "correct" else "✗"
+                sym_size = max(10, min(h - 4, w - 4, 28))
+                sym_font = self._load_font(sym_size)
+                if sym_font:
+                    tb  = draw.textbbox((0, 0), sym, font=sym_font)
+                    tw2, th2 = tb[2] - tb[0], tb[3] - tb[1]
+                    draw.text((x + (w - tw2) // 2, y + (h - th2) // 2 - tb[1]),
+                              sym, font=sym_font, fill=color)
+        return base.convert("RGB")
 
     # ── verify tree ───────────────────────────────────────────────────────
     def _refresh_verify_tree(self):
@@ -1551,14 +1738,13 @@ class PDFMarkerApp:
         return nx + m["x"], ny + m["y"]
 
     def _navigate_verify_to_marker(self, mid):
-        """Open PDF window (if needed), switch to marker page, and centre on it."""
+        """If the PDF preview window is already open, switch to marker page and centre."""
         if not self.verify_doc or not self.verify_markers:
             return
-        # Auto-open PDF window
+        # Only navigate if PDF window is already open — never auto-open
         if not self.verify_pdf_window or not self.verify_pdf_window.winfo_exists():
-            self._open_verify_pdf_window()
-        else:
-            self.verify_pdf_window.lift()
+            return
+        self.verify_pdf_window.lift()
 
         for m in self.verify_markers:
             if m.get("id") != mid:
