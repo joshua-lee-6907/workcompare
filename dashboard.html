@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>安全壳综合监测系统</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#050a18; --panel:#091228; --card:#0d1a35; --card2:#122040;
+  --accent:#00d4ff; --accent2:#0077ee;
+  --text:#c8e6f8; --dim:#5577aa;
+  --ok:#00cc88; --warn:#ffaa00; --err:#ff4455;
+  --border:#1a3060;
+  --glow:0 0 18px rgba(0,212,255,.35);
+  --font:'Microsoft YaHei','PingFang SC','Hiragino Sans GB','WenQuanYi Micro Hei',sans-serif;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
+  font-family:var(--font);color:var(--text);}
+
+/* ─── 整体布局 ─── */
+#app{display:grid;grid-template-rows:56px 1fr;height:100vh;}
+#main{display:grid;grid-template-columns:224px 1fr 284px;overflow:hidden;}
+
+/* ─── 顶栏 ─── */
+#hdr{
+  background:linear-gradient(90deg,#020818 0%,#0b1530 50%,#020818 100%);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;position:relative;
+}
+#hdr::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.6;}
+.hdr-l{display:flex;align-items:center;gap:12px;}
+.logo{width:30px;height:30px;border:2px solid var(--accent);border-radius:50%;
+  background:radial-gradient(circle,rgba(0,212,255,.2) 0%,transparent 70%);
+  animation:logopulse 3s infinite;}
+@keyframes logopulse{0%,100%{box-shadow:0 0 0 0 rgba(0,212,255,.4);}
+  50%{box-shadow:0 0 0 8px rgba(0,212,255,0);}}
+#main-title{font-size:19px;font-weight:bold;
+  background:linear-gradient(90deg,var(--accent) 0%,#88eeff 50%,var(--accent) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-size:200%;animation:shimmer 5s infinite;}
+@keyframes shimmer{0%,100%{background-position:0%;}50%{background-position:100%;}}
+.hdr-c{display:flex;gap:16px;align-items:center;}
+.badge{padding:4px 13px;border-radius:20px;font-size:12px;font-weight:bold;
+  display:flex;align-items:center;gap:6px;}
+.badge.online{background:rgba(0,204,136,.1);border:1px solid var(--ok);color:var(--ok);}
+.badge.info{background:rgba(0,119,238,.1);border:1px solid var(--accent2);color:var(--accent2);}
+.badge.warn{background:rgba(255,170,0,.1);border:1px solid var(--warn);color:var(--warn);}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor;
+  animation:blink 1.5s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+.hdr-r{text-align:right;}
+.clock{font-size:21px;font-weight:bold;color:var(--accent);font-family:monospace;}
+.dateline{font-size:11px;color:var(--dim);margin-top:2px;}
+
+/* ─── 左侧面板 ─── */
+#left{background:var(--panel);border-right:1px solid var(--border);
+  overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
+#left::-webkit-scrollbar{width:4px;}
+#left::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+/* ─── 中央面板 ─── */
+#center{display:flex;flex-direction:column;gap:8px;padding:8px;
+  background:var(--bg);overflow:hidden;}
+
+/* ─── 右侧面板 ─── */
+#right{background:var(--panel);border-left:1px solid var(--border);
+  padding:8px;display:flex;flex-direction:column;gap:0;}
+
+/* ─── 卡片 ─── */
+.card{background:var(--card);border:1px solid var(--border);
+  border-radius:6px;overflow:hidden;flex-shrink:0;}
+.card-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;
+  background:rgba(0,212,255,.05);border-bottom:1px solid var(--border);
+  font-size:12px;font-weight:bold;color:var(--accent);}
+.card-body{padding:10px;}
+
+/* ─── 阶段流程 ─── */
+.steps{display:flex;flex-direction:column;gap:3px;}
+.step{display:flex;align-items:center;gap:8px;padding:5px 6px;
+  border-radius:4px;font-size:11px;}
+.step.completed{color:var(--ok);}
+.step.active{background:rgba(0,212,255,.1);color:var(--accent);font-weight:bold;}
+.step.pending{color:var(--dim);}
+.sdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.step.completed .sdot{background:var(--ok);}
+.step.active    .sdot{background:var(--accent);box-shadow:0 0 6px var(--accent);}
+.step.pending   .sdot{background:var(--border);}
+.stime{margin-left:auto;font-size:10px;color:var(--dim);}
+.prog-wrap{background:var(--card2);border-radius:4px;height:5px;
+  margin-top:8px;overflow:hidden;}
+.prog-bar{height:100%;border-radius:4px;
+  background:linear-gradient(90deg,var(--accent2),var(--accent));
+  transition:width .5s;}
+
+/* ─── 设备状态 ─── */
+.equip-row{display:flex;justify-content:space-between;align-items:center;
+  padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px;}
+.equip-row:last-child{border-bottom:none;}
+.equip-name{color:var(--dim);}
+.tag{font-weight:bold;font-size:10px;padding:2px 7px;border-radius:10px;}
+.tag.normal{background:rgba(0,204,136,.15);color:var(--ok);}
+.tag.warning{background:rgba(255,170,0,.15);color:var(--warn);}
+.tag.error{background:rgba(255,68,85,.15);color:var(--err);}
+
+/* ─── 测点在线 ─── */
+.stats{display:flex;justify-content:space-around;text-align:center;padding:4px 0;}
+.stat-val{font-size:22px;font-weight:bold;color:var(--accent);}
+.stat-lbl{font-size:10px;color:var(--dim);margin-top:1px;}
+.offline-tag{margin-top:6px;font-size:10px;color:var(--warn);
+  line-height:1.6;word-break:break-all;}
+
+/* ─── 告警 ─── */
+.alert-row{display:flex;align-items:flex-start;gap:6px;
+  padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px;}
+.alert-row:last-child{border-bottom:none;}
+.adot{width:6px;height:6px;border-radius:50%;margin-top:3px;flex-shrink:0;}
+.alert-row.warning .adot{background:var(--warn);}
+.alert-row.info    .adot{background:var(--accent);}
+.alert-row.error   .adot{background:var(--err);}
+.amsg{color:var(--dim);line-height:1.5;flex:1;}
+.atime{color:rgba(255,255,255,.3);white-space:nowrap;font-size:9px;}
+
+/* ─── 图表容器 ─── */
+.chart-wrap{flex:1;background:var(--card);border:1px solid var(--border);
+  border-radius:6px;display:flex;flex-direction:column;overflow:hidden;min-height:0;}
+.chart-top{display:flex;align-items:center;justify-content:space-between;
+  padding:7px 14px;background:rgba(0,212,255,.04);
+  border-bottom:1px solid var(--border);flex-shrink:0;}
+.chart-title{font-size:13px;font-weight:bold;color:var(--accent);}
+.chart-meta{font-size:10px;color:var(--dim);}
+.chart-el{flex:1;min-height:0;}
+
+/* ─── 3D 模型区 ─── */
+#model-card{flex:1;display:flex;flex-direction:column;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:6px;overflow:hidden;min-height:0;}
+#three-wrap{flex:1;position:relative;min-height:0;
+  background:radial-gradient(ellipse at center,#071a3a 0%,#030c1e 100%);}
+#three-canvas{display:block;width:100%;height:100%;}
+.model-hint{text-align:center;font-size:10px;color:var(--dim);
+  padding:4px;flex-shrink:0;background:var(--card);}
+
+/* ─── 传感器弹出卡 ─── */
+#s-popup{position:absolute;top:12px;left:12px;
+  background:rgba(7,15,35,.95);border:1px solid var(--accent);
+  border-radius:8px;padding:12px;min-width:162px;
+  box-shadow:var(--glow);pointer-events:none;z-index:20;}
+#s-popup.hidden{display:none;}
+.pop-title{font-size:13px;font-weight:bold;color:var(--accent);
+  margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.pop-row{display:flex;justify-content:space-between;
+  margin:4px 0;font-size:11px;}
+.pop-k{color:var(--dim);}
+.pop-v{color:var(--text);font-weight:bold;}
+.pop-v.hi{color:var(--accent);}
+
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══ 顶栏 ═══ -->
+  <header id="hdr">
+    <div class="hdr-l">
+      <div class="logo"></div>
+      <h1 id="main-title">安全壳综合监测系统</h1>
+    </div>
+    <div class="hdr-c">
+      <div class="badge online" id="sys-badge">
+        <div class="dot"></div><span id="sys-txt">系统连接中</span>
+      </div>
+      <div class="badge info" id="data-badge">
+        <div class="dot"></div><span id="data-txt">等待数据</span>
+      </div>
+    </div>
+    <div class="hdr-r">
+      <div class="clock" id="clock"></div>
+      <div class="dateline" id="dateline"></div>
+    </div>
+  </header>
+
+  <!-- ═══ 主体 ═══ -->
+  <div id="main">
+
+    <!-- 左侧：状态卡片 -->
+    <aside id="left">
+      <div class="card">
+        <div class="card-hdr">⚡&nbsp;阶段流程</div>
+        <div class="card-body" id="phase-body"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr">🔧&nbsp;设备状态</div>
+        <div class="card-body" id="equip-body"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr">📡&nbsp;测点在线情况</div>
+        <div class="card-body" id="sensor-body"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr">🔔&nbsp;系统告警</div>
+        <div class="card-body" id="alert-body"></div>
+      </div>
+    </aside>
+
+    <!-- 中央：两张图表 -->
+    <section id="center">
+      <div class="chart-wrap">
+        <div class="chart-top">
+          <span class="chart-title">实时监控压力曲线</span>
+          <span class="chart-meta" id="p-meta">–</span>
+        </div>
+        <div class="chart-el" id="pc"></div>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-top">
+          <span class="chart-title">实时温度与湿度曲线</span>
+          <span class="chart-meta" id="th-meta">–</span>
+        </div>
+        <div class="chart-el" id="thc"></div>
+      </div>
+    </section>
+
+    <!-- 右侧：3D 测点分布 -->
+    <aside id="right">
+      <div id="model-card">
+        <div class="card-hdr">🏗&nbsp;测点分布图</div>
+        <div id="three-wrap">
+          <canvas id="three-canvas"></canvas>
+          <div id="s-popup" class="hidden">
+            <div class="pop-title" id="pop-title">测点信息</div>
+            <div id="pop-rows"></div>
+          </div>
+        </div>
+        <div class="model-hint">拖动旋转 · 滚轮缩放 · 右键平移</div>
+      </div>
+    </aside>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+//  全局状态
+// ══════════════════════════════════════════════
+const API     = 'http://127.0.0.1:5000';
+let appCfg    = {};
+let lastData  = {};
+let pChart    = null;   // 压力图
+let thChart   = null;   // 温湿度图
+let hlVarId   = null;   // 从 3D 点击高亮的变量
+
+// 每层颜色
+const LAYER_COLORS = [
+  0x00d4ff, 0x00ff88, 0xffaa00, 0xff6b6b,
+  0xa29bfe, 0x74b9ff, 0xfd79a8, 0x55efc4
+];
+// 温度系列颜色
+const T_COLS = ['#ff6b6b','#ff9f43','#ffd32a','#ff5e57','#ff793f'];
+// 湿度系列颜色
+const H_COLS = ['#00d4ff','#48dbfb','#a29bfe','#74b9ff','#0652DD'];
+
+// ══════════════════════════════════════════════
+//  时钟
+// ══════════════════════════════════════════════
+function updateClock(){
+  const n=new Date(), p=s=>String(s).padStart(2,'0');
+  document.getElementById('clock').textContent=
+    `${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`;
+  const days=['日','一','二','三','四','五','六'];
+  document.getElementById('dateline').textContent=
+    `${n.getFullYear()}年${n.getMonth()+1}月${n.getDate()}日 星期${days[n.getDay()]}`;
+}
+setInterval(updateClock,1000); updateClock();
+
+// ══════════════════════════════════════════════
+//  API 工具
+// ══════════════════════════════════════════════
+async function fetchJSON(url,fb={}){
+  try{
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok) return fb;
+    return await r.json();
+  }catch(e){return fb;}
+}
+
+// ══════════════════════════════════════════════
+//  状态卡片渲染
+// ══════════════════════════════════════════════
+async function updateStatus(){
+  const s=await fetchJSON(`${API}/api/status`);
+  if(!s||!s.phase) return;
+
+  // 阶段流程
+  const ph=s.phase;
+  let html='<div class="steps">';
+  (ph.stages||[]).forEach(st=>{
+    html+=`<div class="step ${st.status}">
+      <div class="sdot"></div>
+      <span>${st.name}</span>
+      ${st.time?`<span class="stime">${st.time}</span>`:''}
+    </div>`;
+  });
+  html+='</div>';
+  if(ph.progress!=null){
+    html+=`<div style="margin-top:8px;">
+      <div style="display:flex;justify-content:space-between;font-size:10px;
+        color:var(--dim);margin-bottom:4px;">
+        <span>${ph.name||''}</span><span>${ph.progress}%</span>
+      </div>
+      <div class="prog-wrap"><div class="prog-bar" style="width:${ph.progress}%"></div></div>
+    </div>`;
+  }
+  document.getElementById('phase-body').innerHTML=html;
+
+  // 设备状态
+  const eq=s.equipment||[];
+  document.getElementById('equip-body').innerHTML=eq.map(e=>
+    `<div class="equip-row">
+       <span class="equip-name">${e.name}</span>
+       <span class="tag ${e.status}">${e.value||e.status}</span>
+     </div>`
+  ).join('');
+
+  // 测点在线
+  const sr=s.sensors||{};
+  const on=sr.online||0,tot=sr.total||0,off=tot-on;
+  const ofl=(sr.offline_list||[]).join('、');
+  document.getElementById('sensor-body').innerHTML=`
+    <div class="stats">
+      <div><div class="stat-val" style="color:var(--ok)">${on}</div>
+           <div class="stat-lbl">在线</div></div>
+      <div><div class="stat-val">${tot}</div>
+           <div class="stat-lbl">总数</div></div>
+      <div><div class="stat-val" style="color:var(--err)">${off}</div>
+           <div class="stat-lbl">离线</div></div>
+    </div>
+    ${ofl?`<div class="offline-tag">离线: ${ofl}</div>`:''}`;
+
+  // 告警
+  const al=s.alerts||[];
+  document.getElementById('alert-body').innerHTML=al.map(a=>
+    `<div class="alert-row ${a.level}">
+       <div class="adot"></div>
+       <span class="amsg">${a.message}</span>
+       <span class="atime">${a.time}</span>
+     </div>`
+  ).join('');
+}
+
+// ══════════════════════════════════════════════
+//  压力曲线 (ECharts)
+// ══════════════════════════════════════════════
+function initPChart(){
+  pChart=echarts.init(document.getElementById('pc'),'dark');
+  pChart.setOption({
+    backgroundColor:'transparent',
+    textStyle:{fontFamily:'Microsoft YaHei,sans-serif'},
+    animation:false,
+    grid:{left:58,right:52,top:28,bottom:44,containLabel:false},
+    tooltip:{trigger:'axis',
+      backgroundColor:'rgba(7,15,35,.95)',borderColor:'#00d4ff',
+      textStyle:{color:'#c8e6f8',fontFamily:'Microsoft YaHei'}},
+    legend:{textStyle:{color:'#5577aa',fontFamily:'Microsoft YaHei'},top:4,right:6,itemWidth:14},
+    xAxis:{type:'category',data:[],
+      axisLine:{lineStyle:{color:'#1a3060'}},
+      axisLabel:{color:'#5577aa',fontFamily:'Microsoft YaHei',fontSize:10},
+      splitLine:{show:false}},
+    yAxis:{type:'value',scale:true,
+      nameTextStyle:{color:'#5577aa',fontFamily:'Microsoft YaHei'},
+      axisLine:{show:true,lineStyle:{color:'#1a3060'}},
+      axisLabel:{color:'#5577aa',fontFamily:'Microsoft YaHei',fontSize:10},
+      splitLine:{lineStyle:{color:'#1a3060',type:'dashed'}}},
+    series:[
+      {name:'监测值',type:'line',data:[],smooth:true,
+       lineStyle:{color:'#00d4ff',width:2},
+       areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[
+         {offset:0,color:'rgba(0,212,255,.22)'},{offset:1,color:'rgba(0,212,255,0)'}]}},
+       symbol:'circle',symbolSize:3,itemStyle:{color:'#00d4ff'}},
+      {name:'目标曲线',type:'line',data:[],
+       lineStyle:{color:'#ffaa00',width:1.5,type:'dashed'},
+       symbol:'none',itemStyle:{color:'#ffaa00'}}
+    ]
+  });
+  new ResizeObserver(()=>pChart.resize())
+    .observe(document.getElementById('pc'));
+}
+
+function updatePChart(data,cfg){
+  if(!pChart) return;
+  const pc=cfg.pressure_chart||{};
+  const mid=pc.monitor_var, tid=pc.target_var;
+  const vl=cfg.variables||[];
+  const mv=vl.find(v=>v.var_id===mid);
+  const tv=vl.find(v=>v.var_id===tid);
+  const mdata=mid?(data.history[mid]||[]):[];
+  const tdata=tid?(data.target[tid]||[]):[];
+  const cur=mid&&data.current[mid]!=null?Number(data.current[mid]).toFixed(4):'–';
+  document.getElementById('p-meta').textContent=
+    mv?`${mv.display_name}: ${cur}`:'–';
+  pChart.setOption({
+    xAxis:{data:data.timestamps||[]},
+    series:[
+      {name:mv?mv.display_name:'监测值',data:mdata},
+      {name:tv?tv.display_name:'目标曲线',
+       data:tdata.length?tdata.map((v,i)=>[i,v]):[]}
+    ]
+  });
+}
+
+// ══════════════════════════════════════════════
+//  温湿度曲线 (ECharts 双轴)
+// ══════════════════════════════════════════════
+function initTHChart(){
+  thChart=echarts.init(document.getElementById('thc'),'dark');
+  thChart.setOption({
+    backgroundColor:'transparent',
+    textStyle:{fontFamily:'Microsoft YaHei,sans-serif'},
+    animation:false,
+    grid:{left:58,right:58,top:28,bottom:44,containLabel:false},
+    tooltip:{trigger:'axis',
+      backgroundColor:'rgba(7,15,35,.95)',borderColor:'#00d4ff',
+      textStyle:{color:'#c8e6f8',fontFamily:'Microsoft YaHei'}},
+    legend:{textStyle:{color:'#5577aa',fontFamily:'Microsoft YaHei'},top:4,right:6,itemWidth:14},
+    xAxis:{type:'category',data:[],
+      axisLine:{lineStyle:{color:'#1a3060'}},
+      axisLabel:{color:'#5577aa',fontFamily:'Microsoft YaHei',fontSize:10},
+      splitLine:{show:false}},
+    yAxis:[
+      {type:'value',scale:true,name:'温度(°C)',
+       nameTextStyle:{color:'#ff6b6b',fontFamily:'Microsoft YaHei',fontSize:10},
+       axisLine:{show:true,lineStyle:{color:'#ff6b6b'}},
+       axisLabel:{color:'#ff6b6b',fontFamily:'Microsoft YaHei',fontSize:10},
+       splitLine:{lineStyle:{color:'#1a3060',type:'dashed'}}},
+      {type:'value',scale:true,name:'湿度(%)',
+       nameTextStyle:{color:'#00d4ff',fontFamily:'Microsoft YaHei',fontSize:10},
+       axisLine:{show:true,lineStyle:{color:'#00d4ff'}},
+       axisLabel:{color:'#00d4ff',fontFamily:'Microsoft YaHei',fontSize:10},
+       splitLine:{show:false}}
+    ],
+    series:[]
+  });
+  new ResizeObserver(()=>thChart.resize())
+    .observe(document.getElementById('thc'));
+}
+
+function updateTHChart(data,cfg){
+  if(!thChart) return;
+  const thc=cfg.temp_humidity_chart||{};
+  const tvars=thc.temp_vars||[], hvars=thc.humidity_vars||[];
+  // 高亮优先取 3D 点击，其次取配置
+  const hlT = hlVarId&&tvars.includes(hlVarId) ? hlVarId : thc.highlight_temp;
+  const hlH = hlVarId&&hvars.includes(hlVarId) ? hlVarId : thc.highlight_humidity;
+  const vl=cfg.variables||[];
+  const ts=data.timestamps||[];
+  const series=[];
+
+  tvars.forEach((vid,i)=>{
+    const v=vl.find(x=>x.var_id===vid);
+    const hl=(vid===hlT);
+    const col=T_COLS[i%T_COLS.length];
+    series.push({
+      name:v?v.display_name:vid, type:'line', yAxisIndex:0,
+      data:data.history[vid]||[], smooth:true, symbol:'none',
+      lineStyle:{color:col,width:hl?2.5:1.2,opacity:hl?1:.45},
+      itemStyle:{color:col}
+    });
+  });
+  hvars.forEach((vid,i)=>{
+    const v=vl.find(x=>x.var_id===vid);
+    const hl=(vid===hlH);
+    const col=H_COLS[i%H_COLS.length];
+    series.push({
+      name:v?v.display_name:vid, type:'line', yAxisIndex:1,
+      data:data.history[vid]||[], smooth:true, symbol:'none',
+      lineStyle:{color:col,width:hl?2.5:1.2,opacity:hl?1:.45},
+      itemStyle:{color:col}
+    });
+  });
+
+  thChart.setOption({
+    xAxis:{data:ts}, series:series
+  });
+  document.getElementById('th-meta').textContent=
+    `温度 ${tvars.length} 路 · 湿度 ${hvars.length} 路`;
+}
+
+
+// ══════════════════════════════════════════════
+//  Three.js 3D 安全壳模型
+// ══════════════════════════════════════════════
+let scene, camera, renderer, controls;
+let sensorMeshes = [];
+let raycaster, mouse;
+
+function initThree(){
+  const wrap   = document.getElementById('three-wrap');
+  const canvas = document.getElementById('three-canvas');
+  const W=wrap.clientWidth, H=wrap.clientHeight;
+
+  // 场景
+  scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x030c1e, 9, 20);
+
+  // 相机
+  camera = new THREE.PerspectiveCamera(52, W/H, 0.1, 100);
+  camera.position.set(3, 1.2, 4.5);
+  camera.lookAt(0, 0.5, 0);
+
+  // 渲染器
+  renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  // 灯光
+  scene.add(new THREE.AmbientLight(0x0044aa, 0.6));
+  const dir = new THREE.DirectionalLight(0x00aaff, 1.0);
+  dir.position.set(4, 6, 4);
+  scene.add(dir);
+  const pt = new THREE.PointLight(0x00d4ff, 1.8, 10);
+  pt.position.set(0, 3, 0);
+  scene.add(pt);
+
+  // 安全壳主体
+  buildShell();
+
+  // 网格地面
+  const grid = new THREE.GridHelper(8, 16, 0x1a3060, 0x0d1a30);
+  grid.position.y = -1.56;
+  scene.add(grid);
+
+  // 轨道控制
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance   = 2;
+  controls.maxDistance   = 14;
+  controls.target.set(0, 0.5, 0);
+  controls.mouseButtons = {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.PAN
+  };
+
+  // 射线拾取
+  raycaster = new THREE.Raycaster();
+  mouse     = new THREE.Vector2();
+  canvas.addEventListener('click', onCanvasClick);
+
+  // 响应尺寸
+  new ResizeObserver(()=>{
+    const w=wrap.clientWidth, h=wrap.clientHeight;
+    camera.aspect=w/h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }).observe(wrap);
+
+  // 动画循环
+  (function animate(){
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+}
+
+function buildShell(){
+  // 清除旧主体（保留灯光、网格）
+  scene.children = scene.children.filter(o=>
+    o instanceof THREE.Light || o instanceof THREE.GridHelper);
+  sensorMeshes = [];
+
+  const matSolid = new THREE.MeshPhongMaterial({
+    color:0x0d2045, emissive:0x020810,
+    transparent:true, opacity:0.62,
+    side:THREE.DoubleSide, shininess:90
+  });
+  const matWire = new THREE.MeshBasicMaterial({
+    color:0x1c4888, wireframe:true, transparent:true, opacity:0.12
+  });
+
+  // 圆柱体 (y: -1.5 ~ +1.5)
+  const cylG = new THREE.CylinderGeometry(1,1,3,48,6);
+  scene.add(new THREE.Mesh(cylG, matSolid));
+  scene.add(new THREE.Mesh(cylG, matWire));
+
+  // 半球顶盖 (球心 y=1.5, 上半球)
+  const hemiG = new THREE.SphereGeometry(1,48,24,0,Math.PI*2,0,Math.PI/2);
+  const hemi  = new THREE.Mesh(hemiG, matSolid.clone());
+  hemi.position.y = 1.5;
+  scene.add(hemi);
+  const hemiW = new THREE.Mesh(hemiG, matWire);
+  hemiW.position.y = 1.5;
+  scene.add(hemiW);
+
+  // 底盖
+  const capG = new THREE.CircleGeometry(1,48);
+  const cap  = new THREE.Mesh(capG, matSolid.clone());
+  cap.rotation.x = -Math.PI/2;
+  cap.position.y = -1.5;
+  scene.add(cap);
+
+  // 发光环
+  addRing(1.01,1.06,  1.5, 0x00d4ff, 0.9);
+  addRing(1.01,1.06, -1.5, 0x00aacc, 0.5);
+  addRing(1.01,1.06,  0.0, 0x0066aa, 0.35);
+  addRing(1.01,1.06,  0.75, 0x004488, 0.25);
+}
+
+function addRing(r0,r1,y,color,opacity){
+  const g=new THREE.RingGeometry(r0,r1,64);
+  const m=new THREE.MeshBasicMaterial(
+    {color,side:THREE.DoubleSide,transparent:true,opacity});
+  const ring=new THREE.Mesh(g,m);
+  ring.rotation.x=-Math.PI/2;
+  ring.position.y=y;
+  scene.add(ring);
+}
+
+function buildSensors(layout){
+  // 移除旧传感器
+  sensorMeshes.forEach(m=>scene.remove(m));
+  sensorMeshes=[];
+  const layers=(layout&&layout.layers)||[];
+
+  layers.forEach((layer,li)=>{
+    const count  = layer.count||0;
+    const height = parseFloat(layer.height)||0;
+    const vars   = layer.vars||[];
+    const lcolor = LAYER_COLORS[li % LAYER_COLORS.length];
+
+    for(let i=0;i<count;i++){
+      // 顺时针，从正前方(+Z)开始
+      const angle = Math.PI/2 - (2*Math.PI*i/count);
+
+      // 确定半径（区分圆柱面与球面）
+      let R=1.08;
+      if(height>1.5){
+        const dy=height-1.5;
+        const sr=Math.sqrt(Math.max(0,1-dy*dy));
+        R=sr+0.08;
+      }
+
+      const x=R*Math.cos(angle), z=R*Math.sin(angle), y=height;
+
+      // 传感器球体
+      const g   = new THREE.SphereGeometry(0.055,12,8);
+      const mat = new THREE.MeshPhongMaterial({
+        color:lcolor, emissive:new THREE.Color(lcolor).multiplyScalar(0.2),
+        shininess:120
+      });
+      const sphere = new THREE.Mesh(g, mat);
+      sphere.position.set(x,y,z);
+      sphere.userData = {
+        varId:    vars[i]||null,
+        layer:    layer.label||`L${li+1}`,
+        layerIdx: li,
+        index:    i+1,
+        total:    count,
+        color:    lcolor
+      };
+      scene.add(sphere);
+      sensorMeshes.push(sphere);
+
+      // 小光点
+      const pl = new THREE.PointLight(lcolor, 0.35, 0.6);
+      pl.position.copy(sphere.position);
+      scene.add(pl);
+
+      // 连接线
+      const lmat  = new THREE.LineBasicMaterial(
+        {color:0x1a4488,transparent:true,opacity:0.4});
+      const pts   = [
+        new THREE.Vector3(x*(R-0.065)/R, y, z*(R-0.065)/R),
+        new THREE.Vector3(x, y, z)
+      ];
+      scene.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts), lmat));
+    }
+  });
+}
+
+// ─── 点击拾取 ───
+let hlMesh = null;
+
+function onCanvasClick(evt){
+  const canvas = document.getElementById('three-canvas');
+  const rect   = canvas.getBoundingClientRect();
+  mouse.x = ((evt.clientX-rect.left)/rect.width)*2-1;
+  mouse.y = -((evt.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(sensorMeshes);
+  if(hits.length>0){
+    selectSensor(hits[0].object);
+  } else {
+    clearSensor();
+  }
+}
+
+function selectSensor(mesh){
+  clearSensor();
+  // 高亮
+  mesh.material.emissive = new THREE.Color(0xffaa00);
+  mesh.material.color    = new THREE.Color(0xffdd44);
+  hlMesh = mesh;
+
+  const ud=mesh.userData;
+  const vl=(appCfg.variables||[]);
+  const vi=ud.varId?vl.find(v=>v.var_id===ud.varId):null;
+  const curVal=ud.varId&&lastData.current?lastData.current[ud.varId]:undefined;
+
+  document.getElementById('pop-title').textContent=
+    `${ud.layer} · 测点 #${ud.index}`;
+  document.getElementById('pop-rows').innerHTML=`
+    <div class="pop-row"><span class="pop-k">所属层:</span>
+      <span class="pop-v">${ud.layer}</span></div>
+    <div class="pop-row"><span class="pop-k">位置:</span>
+      <span class="pop-v">第 ${ud.index} / ${ud.total} 个</span></div>
+    ${vi?`<div class="pop-row"><span class="pop-k">变量:</span>
+      <span class="pop-v">${vi.display_name}</span></div>`:''}
+    <div class="pop-row"><span class="pop-k">当前值:</span>
+      <span class="pop-v hi">${curVal!=null?Number(curVal).toFixed(4):'N/A'}</span></div>
+  `;
+  document.getElementById('s-popup').classList.remove('hidden');
+
+  // 联动高亮 T/H 曲线
+  hlVarId = ud.varId||null;
+  if(lastData&&appCfg) updateTHChart(lastData, appCfg);
+}
+
+function clearSensor(){
+  if(hlMesh){
+    const c=new THREE.Color(hlMesh.userData.color||0x00d4ff);
+    hlMesh.material.color   = c;
+    hlMesh.material.emissive= c.clone().multiplyScalar(0.2);
+    hlMesh=null;
+  }
+  document.getElementById('s-popup').classList.add('hidden');
+  hlVarId=null;
+}
+
+// ══════════════════════════════════════════════
+//  数据拉取与轮询
+// ══════════════════════════════════════════════
+let cfgLoaded=false;
+
+async function loadConfig(){
+  const c=await fetchJSON(`${API}/api/config`);
+  if(c&&c.title){
+    appCfg=c;
+    document.getElementById('main-title').textContent=c.title;
+    document.title=c.title;
+    buildSensors(c.sensor_layout);
+    cfgLoaded=true;
+    document.getElementById('sys-txt').textContent='系统在线';
+    document.querySelector('#sys-badge').className='badge online';
+  } else {
+    document.getElementById('sys-txt').textContent='连接失败';
+    document.querySelector('#sys-badge').className='badge warn';
+  }
+}
+
+async function pollData(){
+  if(!cfgLoaded) await loadConfig();
+  const d=await fetchJSON(`${API}/api/data`);
+  if(d&&d.timestamps!==undefined){
+    lastData=d;
+    document.getElementById('data-txt').textContent=
+      d.running?`行 ${d.row_index}/${d.total_rows||'?'}`:'等待启动';
+    updatePChart(d, appCfg);
+    updateTHChart(d, appCfg);
+    // 刷新弹出卡当前值
+    if(hlMesh&&hlMesh.userData.varId&&!document.getElementById('s-popup').classList.contains('hidden')){
+      const vid=hlMesh.userData.varId;
+      const v=d.current[vid];
+      const rows=document.getElementById('pop-rows');
+      const vis=rows.querySelectorAll('.pop-v.hi');
+      if(vis.length) vis[0].textContent=v!=null?Number(v).toFixed(4):'N/A';
+    }
+  } else {
+    document.getElementById('sys-txt').textContent='连接中断';
+    document.querySelector('#sys-badge').className='badge warn';
+  }
+}
+
+// ══════════════════════════════════════════════
+//  初始化
+// ══════════════════════════════════════════════
+window.addEventListener('load', async ()=>{
+  initPChart();
+  initTHChart();
+  initThree();
+  await loadConfig();
+  await pollData();
+  await updateStatus();
+  setInterval(pollData,   2000);
+  setInterval(updateStatus, 10000);
+  setInterval(async()=>{
+    await loadConfig();
+  }, 30000);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "project_name": "安全壳综合监测系统",
+  "last_updated": "2026-04-08 10:00:00",
+  "phase": {
+    "name": "压力测试阶段",
+    "progress": 65,
+    "start_time": "2026-04-08 08:00:00",
+    "estimated_end": "2026-04-08 16:00:00",
+    "stages": [
+      {"id": 1, "name": "预备阶段",   "status": "completed", "time": "08:00"},
+      {"id": 2, "name": "加压阶段",   "status": "completed", "time": "09:00"},
+      {"id": 3, "name": "压力测试",   "status": "active",    "time": "10:00"},
+      {"id": 4, "name": "保压阶段",   "status": "pending",   "time": "14:00"},
+      {"id": 5, "name": "卸压阶段",   "status": "pending",   "time": "15:30"}
+    ]
+  },
+  "equipment": [
+    {"name": "主数据采集器", "model": "DAQ-2000", "status": "normal",  "value": "运行中"},
+    {"name": "压力传感器组", "model": "PT-500",   "status": "normal",  "value": "已校准"},
+    {"name": "温度传感器组", "model": "TC-100",   "status": "warning", "value": "2路异常"},
+    {"name": "湿度传感器组", "model": "RH-200",   "status": "normal",  "value": "正常"},
+    {"name": "控制主机",     "model": "MC-3000",  "status": "normal",  "value": "在线"},
+    {"name": "备用电源",     "model": "UPS-5K",   "status": "normal",  "value": "待机"}
+  ],
+  "sensors": {
+    "total": 48,
+    "online": 45,
+    "offline_list": ["T-L3-05", "T-L3-08", "H-L2-03"]
+  },
+  "alerts": [
+    {"level": "warning", "message": "L3层温度传感器信号弱，请检查接线", "time": "09:45"},
+    {"level": "info",    "message": "系统运行正常，压力曲线符合预期",     "time": "10:00"},
+    {"level": "info",    "message": "已进入压力测试阶段，持续监测中",     "time": "10:05"}
+  ]
+}
