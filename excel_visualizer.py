@@ -13,6 +13,8 @@ Excel 数据交互式可视化（支持 xls/xlsx）
 import sys
 import re
 import warnings
+import os
+import platform
 import numpy as np
 import pandas as pd
 
@@ -36,10 +38,39 @@ import matplotlib.font_manager as fm
 
 
 def set_chinese_font():
-    plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
+    candidates = []
+    if platform.system() == "Windows":
+        candidates = [
+            r"C:\Windows\Fonts\simhei.ttf",
+            r"C:\Windows\Fonts\msyh.ttc",
+            r"C:\Windows\Fonts\simsun.ttc",
+        ]
+    elif platform.system() == "Darwin":
+        candidates = [
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+        ]
+    else:
+        candidates = [
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        ]
+
+    chosen_name = "SimHei"
+    for fp in candidates:
+        if os.path.exists(fp):
+            try:
+                fm.fontManager.addfont(fp)
+                chosen_name = fm.FontProperties(fname=fp).get_name()
+                break
+            except Exception:
+                continue
+
+    plt.rcParams['font.sans-serif'] = [chosen_name, 'SimHei', 'Microsoft YaHei', 'Noto Sans CJK SC', 'DejaVu Sans']
     plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['axes.unicode_minus'] = False
-    return "SimHei"
+    return chosen_name
 
 
 PREFERRED_APP_FONT = set_chinese_font()
@@ -298,7 +329,7 @@ class MainWindow(QMainWindow):
         panel = QWidget(); scroll = QScrollArea(); scroll.setWidget(panel); scroll.setWidgetResizable(True)
         layout = QVBoxLayout(panel)
 
-        file_group = QGroupBox("📂 数据源")
+        file_group = QGroupBox("数据源")
         fl = QVBoxLayout(file_group)
         row = QHBoxLayout()
         self.file_label = QLabel("未选择文件")
@@ -319,20 +350,20 @@ class MainWindow(QMainWindow):
         self.title_edit = QLineEdit("科学数据可视化")
         self.xname_edit = QLineEdit("X 轴")
         self.yname_edit = QLineEdit("Y 轴")
-        txt_group = QGroupBox("✏️ 标题与坐标轴名称")
+        txt_group = QGroupBox("标题与坐标轴名称")
         tl = QVBoxLayout(txt_group)
         for t, w in (("图名", self.title_edit), ("X轴名", self.xname_edit), ("Y轴名", self.yname_edit)):
             r = QHBoxLayout(); r.addWidget(QLabel(t)); r.addWidget(w); tl.addLayout(r)
         layout.addWidget(txt_group)
 
-        mode_group = QGroupBox("📉 图型")
+        mode_group = QGroupBox("图型")
         ml = QHBoxLayout(mode_group)
         self.mode_combo = QComboBox(); self.mode_combo.addItems(["散点图", "折线图", "折线+散点图"])
         ml.addWidget(self.mode_combo); layout.addWidget(mode_group)
 
         self.start_spin = QSpinBox(); self.end_spin = QSpinBox()
         self.start_spin.setMinimum(0); self.end_spin.setMinimum(0)
-        idx_group = QGroupBox("📏 数据索引范围")
+        idx_group = QGroupBox("数据索引范围")
         il = QVBoxLayout(idx_group)
         r1 = QHBoxLayout(); r1.addWidget(QLabel("开始")); r1.addWidget(self.start_spin)
         r2 = QHBoxLayout(); r2.addWidget(QLabel("结束")); r2.addWidget(self.end_spin)
