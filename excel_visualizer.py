@@ -41,8 +41,9 @@ def set_chinese_font():
     candidates = []
     if platform.system() == "Windows":
         candidates = [
-            r"C:\Windows\Fonts\simhei.ttf",
             r"C:\Windows\Fonts\msyh.ttc",
+            r"C:\Windows\Fonts\msyhbd.ttc",
+            r"C:\Windows\Fonts\simhei.ttf",
             r"C:\Windows\Fonts\simsun.ttc",
         ]
     elif platform.system() == "Darwin":
@@ -57,7 +58,7 @@ def set_chinese_font():
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         ]
 
-    chosen_name = "SimHei"
+    chosen_name = "Microsoft YaHei"
     for fp in candidates:
         if os.path.exists(fp):
             try:
@@ -67,7 +68,7 @@ def set_chinese_font():
             except Exception:
                 continue
 
-    plt.rcParams['font.sans-serif'] = [chosen_name, 'SimHei', 'Microsoft YaHei', 'Noto Sans CJK SC', 'DejaVu Sans']
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', chosen_name, 'SimHei', 'Noto Sans CJK SC', 'DejaVu Sans']
     plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['axes.unicode_minus'] = False
     return chosen_name
