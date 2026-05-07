@@ -45,9 +45,10 @@ def set_chinese_font():
         plt.rcParams['font.sans-serif'] = usable + ['DejaVu Sans']
         plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['axes.unicode_minus'] = False
+    return usable[0] if usable else None
 
 
-set_chinese_font()
+PREFERRED_APP_FONT = set_chinese_font()
 plt.style.use('seaborn-v0_8-whitegrid')
 
 
@@ -228,7 +229,11 @@ class PlotCanvas(FigureCanvas):
                 handles.append(obj_for_legend)
                 labels.append(var)
 
-            ax.set_ylabel(y_axis_name if gi == 0 else f"{y_axis_name}-{group_key}", fontsize=12, fontweight='bold')
+            custom_axis_label = None
+            if self.parent_window:
+                custom_axis_label = self.parent_window.get_axis_custom_label(gi)
+            axis_label_text = custom_axis_label or (y_axis_name if gi == 0 else f"{y_axis_name}-{group_key}")
+            ax.set_ylabel(axis_label_text, fontsize=12, fontweight='bold')
 
         ax_main.set_xlabel(x_label, fontsize=12, fontweight='bold')
         ax_main.set_title(title_text, fontsize=14, fontweight='bold', pad=10)
@@ -263,6 +268,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.data_processor = DataProcessor()
         self.range_widgets = {}
+        self.axis_name_edits = {}
         self.setup_style()
         self.init_ui()
 
@@ -356,6 +362,9 @@ class MainWindow(QMainWindow):
         self.ranges_layout = QVBoxLayout(); rg = QGroupBox("轴范围")
         rg.setLayout(self.ranges_layout); layout.addWidget(rg)
 
+        self.axis_name_layout = QVBoxLayout(); ang = QGroupBox("Y轴重命名（每个轴）")
+        ang.setLayout(self.axis_name_layout); layout.addWidget(ang)
+
         btn_plot = QPushButton("生成图表")
         btn_plot.clicked.connect(self.plot_data)
         btn_save = QPushButton("保存无损图片")
@@ -421,7 +430,34 @@ class MainWindow(QMainWindow):
             sp = QSpinBox(); sp.setRange(0, 2000); sp.setValue(offsets_dict.get(idx, 70 * (idx - 1)))
             sp.valueChanged.connect(lambda v, i=idx: self._set_axis_offset(i, v))
             hl.addWidget(sp); self.offsets_layout.addWidget(row)
+        self._build_axis_name_controls(axis_group_keys)
         self._build_axis_range_controls(axis_group_keys)
+
+    def _build_axis_name_controls(self, axis_group_keys):
+        while self.axis_name_layout.count():
+            item = self.axis_name_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        old_values = {k: v.text().strip() for k, v in self.axis_name_edits.items()}
+        self.axis_name_edits.clear()
+        for idx, name in enumerate(axis_group_keys):
+            row = QWidget()
+            hl = QHBoxLayout(row)
+            hl.addWidget(QLabel(f"轴{idx}:"))
+            edit = QLineEdit()
+            edit.setPlaceholderText(f"默认: {self.yname_edit.text().strip() or 'Y'}{'-' + name if idx > 0 else ''}")
+            if idx in old_values:
+                edit.setText(old_values[idx])
+            hl.addWidget(edit)
+            self.axis_name_layout.addWidget(row)
+            self.axis_name_edits[idx] = edit
+
+    def get_axis_custom_label(self, axis_index):
+        edit = self.axis_name_edits.get(axis_index)
+        if not edit:
+            return None
+        txt = edit.text().strip()
+        return txt if txt else None
 
     def _set_axis_offset(self, idx, val):
         self.plot_canvas._axis_outward[idx] = int(val)
@@ -510,7 +546,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     app.setApplicationName("Excel 数据可视化")
-    font = QFont("Microsoft YaHei", 10)
+    font = QFont(PREFERRED_APP_FONT or "Microsoft YaHei", 10)
     app.setFont(font)
     wnd = MainWindow(); wnd.show()
     sys.exit(app.exec())
