@@ -12,6 +12,7 @@ Excel 数据交互式可视化（支持 xls/xlsx）
 
 import sys
 import re
+import warnings
 import numpy as np
 import pandas as pd
 
@@ -49,6 +50,9 @@ def set_chinese_font():
 
 
 PREFERRED_APP_FONT = set_chinese_font()
+# 如果运行环境缺少中文字体，Matplotlib 会发出 glyph missing 警告；
+# 这里抑制该类告警，避免影响程序使用。
+warnings.filterwarnings("ignore", message=r"Glyph .* missing from font")
 plt.style.use('seaborn-v0_8-whitegrid')
 
 
