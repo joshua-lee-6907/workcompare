@@ -24,36 +24,12 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 
 def set_chinese_font():
-    preferred_local_ttf = os.path.join(os.path.dirname(__file__), "1.ttf")
-    preferred_system = ["Microsoft YaHei", "微软雅黑", "SimHei", "PingFang SC", "Noto Sans CJK SC"]
-
-    chosen_font = None
-    if os.path.exists(preferred_local_ttf):
-        try:
-            fm.fontManager.addfont(preferred_local_ttf)
-            chosen_font = fm.FontProperties(fname=preferred_local_ttf).get_name()
-        except Exception:
-            chosen_font = None
-
-    if not chosen_font:
-        for name in preferred_system:
-            try:
-                fp = fm.FontProperties(family=name)
-                path = fm.findfont(fp, fallback_to_default=False)
-                if path and os.path.exists(path):
-                    chosen_font = name
-                    break
-            except Exception:
-                continue
-
-    if not chosen_font:
-        chosen_font = "Microsoft YaHei"
-
-    plt.rcParams["font.family"] = chosen_font
-    plt.rcParams["font.sans-serif"] = [chosen_font]
+    # 全局强制使用 SimHei，避免中文字符回退到 Arial
+    plt.rcParams["font.family"] = "SimHei"
+    plt.rcParams["font.sans-serif"] = ["SimHei"]
     plt.rcParams["axes.unicode_minus"] = False
 
-    # 统一所有刻度与文本，避免 fallback 到 Arial
+    # 统一刻度与文本显示
     plt.rcParams["xtick.labelsize"] = 11
     plt.rcParams["ytick.labelsize"] = 11
     plt.rcParams["axes.titlesize"] = 15
