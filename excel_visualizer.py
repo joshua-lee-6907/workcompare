@@ -31,6 +31,7 @@ from PySide6.QtGui import QFont
 import matplotlib
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -75,6 +76,9 @@ def set_chinese_font():
 
 
 PREFERRED_APP_FONT = set_chinese_font()
+# 显式设置 matplotlib 全局中文字体与负号显示
+rcParams['font.sans-serif'] = ['Microsoft YaHei']
+rcParams['axes.unicode_minus'] = False
 # 如果运行环境缺少中文字体，Matplotlib 会发出 glyph missing 警告；
 # 这里抑制该类告警，避免影响程序使用。
 warnings.filterwarnings("ignore", message=r"Glyph .* missing from font")
