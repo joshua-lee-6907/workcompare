@@ -15,7 +15,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
 import matplotlib
-matplotlib.use("Qt5Agg")
+matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from matplotlib.figure import Figure
@@ -24,21 +24,42 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 
 def set_chinese_font():
-    preferred = [
-        "Microsoft YaHei", "SimHei", "PingFang SC", "Noto Sans CJK SC",
-        "WenQuanYi Zen Hei", "Heiti SC"
-    ]
-    for name in preferred:
+    preferred_local_ttf = os.path.join(os.path.dirname(__file__), "1.ttf")
+    preferred_system = ["Microsoft YaHei", "微软雅黑", "SimHei", "PingFang SC", "Noto Sans CJK SC"]
+
+    chosen_font = None
+    if os.path.exists(preferred_local_ttf):
         try:
-            fp = fm.FontProperties(family=name)
-            path = fm.findfont(fp, fallback_to_default=True)
-            if path and "DejaVu" not in path:
-                plt.rcParams["font.sans-serif"] = [name]
-                plt.rcParams["font.family"] = "sans-serif"
-                break
+            fm.fontManager.addfont(preferred_local_ttf)
+            chosen_font = fm.FontProperties(fname=preferred_local_ttf).get_name()
         except Exception:
-            continue
+            chosen_font = None
+
+    if not chosen_font:
+        for name in preferred_system:
+            try:
+                fp = fm.FontProperties(family=name)
+                path = fm.findfont(fp, fallback_to_default=False)
+                if path and os.path.exists(path):
+                    chosen_font = name
+                    break
+            except Exception:
+                continue
+
+    if not chosen_font:
+        chosen_font = "Microsoft YaHei"
+
+    plt.rcParams["font.family"] = chosen_font
+    plt.rcParams["font.sans-serif"] = [chosen_font]
     plt.rcParams["axes.unicode_minus"] = False
+
+    # 统一所有刻度与文本，避免 fallback 到 Arial
+    plt.rcParams["xtick.labelsize"] = 11
+    plt.rcParams["ytick.labelsize"] = 11
+    plt.rcParams["axes.titlesize"] = 15
+    plt.rcParams["axes.labelsize"] = 12
+    plt.rcParams["legend.fontsize"] = 11
+    plt.rcParams["legend.title_fontsize"] = 11
 
 
 set_chinese_font()
