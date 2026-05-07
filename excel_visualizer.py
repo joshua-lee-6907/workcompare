@@ -36,17 +36,10 @@ import matplotlib.font_manager as fm
 
 
 def set_chinese_font():
-    preferred = [
-        "Microsoft YaHei", "SimHei", "PingFang SC", "Noto Sans CJK SC",
-        "WenQuanYi Zen Hei", "Heiti SC", "Arial Unicode MS"
-    ]
-    installed = {f.name for f in fm.fontManager.ttflist}
-    usable = [name for name in preferred if name in installed]
-    if usable:
-        plt.rcParams['font.sans-serif'] = usable + ['DejaVu Sans']
-        plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
+    plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['axes.unicode_minus'] = False
-    return usable[0] if usable else None
+    return "SimHei"
 
 
 PREFERRED_APP_FONT = set_chinese_font()
