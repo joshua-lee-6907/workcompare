@@ -317,7 +317,14 @@ class PlotCanvas(FigureCanvas):
             for t in axis.get_xticklabels() + axis.get_yticklabels():
                 t.set_fontname(PREFERRED_APP_FONT or "Microsoft YaHei")
 
-        legend = ax_main.legend(handles, labels, loc='upper left', bbox_to_anchor=(1.02, 1), frameon=True, fontsize=9)
+        legend_loc = 'upper left'
+        legend_bbox = (1.02, 1)
+        if self.parent_window:
+            legend_loc, legend_bbox = self.parent_window.get_legend_position()
+        if legend_bbox is None:
+            legend = ax_main.legend(handles, labels, loc=legend_loc, frameon=True, fontsize=9)
+        else:
+            legend = ax_main.legend(handles, labels, loc=legend_loc, bbox_to_anchor=legend_bbox, frameon=True, fontsize=9)
         legend.set_draggable(True)
         legend_handles = getattr(legend, "legendHandles", None)
         if legend_handles is None:
@@ -425,6 +432,17 @@ class MainWindow(QMainWindow):
 
         self.grid_cb = QCheckBox("显示网格"); self.grid_cb.setChecked(True)
         layout.addWidget(self.grid_cb)
+
+        legend_group = QGroupBox("图例位置")
+        lg = QHBoxLayout(legend_group)
+        self.legend_pos_combo = QComboBox()
+        self.legend_pos_combo.addItems(["右上(内)", "左上(内)", "右上(外)", "右下(内)", "左下(内)", "自定义坐标"])
+        self.legend_x_spin = QDoubleSpinBox(); self.legend_x_spin.setRange(-2.0, 5.0); self.legend_x_spin.setDecimals(2); self.legend_x_spin.setValue(1.02)
+        self.legend_y_spin = QDoubleSpinBox(); self.legend_y_spin.setRange(-2.0, 5.0); self.legend_y_spin.setDecimals(2); self.legend_y_spin.setValue(1.0)
+        lg.addWidget(self.legend_pos_combo)
+        lg.addWidget(QLabel("X")); lg.addWidget(self.legend_x_spin)
+        lg.addWidget(QLabel("Y")); lg.addWidget(self.legend_y_spin)
+        layout.addWidget(legend_group)
 
         self.axis_button_group = QButtonGroup(self)
         self.axis_radio_buttons = []
@@ -535,6 +553,19 @@ class MainWindow(QMainWindow):
             return None
         txt = edit.text().strip()
         return txt if txt else None
+
+    def get_legend_position(self):
+        pos = self.legend_pos_combo.currentText()
+        mapping = {
+            "右上(内)": ("upper right", None),
+            "左上(内)": ("upper left", None),
+            "右下(内)": ("lower right", None),
+            "左下(内)": ("lower left", None),
+            "右上(外)": ("upper left", (1.02, 1.0)),
+        }
+        if pos == "自定义坐标":
+            return "upper left", (float(self.legend_x_spin.value()), float(self.legend_y_spin.value()))
+        return mapping.get(pos, ("upper left", (1.02, 1.0)))
 
     def _set_axis_offset(self, idx, val):
         self.plot_canvas._axis_outward[idx] = int(val)
