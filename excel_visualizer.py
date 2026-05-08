@@ -29,11 +29,15 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
 
 import matplotlib
-matplotlib.use('Qt5Agg')
+matplotlib.use("QtAgg", force=True)
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+try:
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+except Exception:
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.font_manager as fm
 
@@ -92,10 +96,18 @@ PREFERRED_APP_FONT = set_chinese_font()
 rcParams['font.family'] = 'sans-serif'
 rcParams['font.sans-serif'] = [PREFERRED_APP_FONT, 'Microsoft YaHei', 'SimHei', 'Noto Sans CJK SC', 'DejaVu Sans']
 rcParams['axes.unicode_minus'] = False
+# 参考修复方案：使用 default 风格，避免主题覆盖字体设置
+plt.style.use("default")
+plt.rcParams.update({
+    "axes.grid": True,
+    "grid.linestyle": "--",
+    "grid.alpha": 0.35,
+    "axes.spines.top": False,
+    "figure.dpi": 120,
+})
 # 如果运行环境缺少中文字体，Matplotlib 会发出 glyph missing 警告；
 # 这里抑制该类告警，避免影响程序使用。
 warnings.filterwarnings("ignore", message=r"Glyph .* missing from font")
-plt.style.use('seaborn-v0_8-whitegrid')
 
 
 class DataProcessor:
