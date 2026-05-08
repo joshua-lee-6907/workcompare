@@ -246,8 +246,10 @@ class PlotCanvas(FigureCanvas):
                 ax.spines['right'].set_position(('outward', self._axis_outward[gi]))
                 self.axes_list.append(ax)
 
+            group_values = []
             for vi, var in enumerate(var_names):
                 y_slice = np.asarray(y_data_dict[var])[start_idx:end_idx + 1]
+                group_values.append(y_slice)
                 color = colors[(gi * 2 + vi) % len(colors)]
 
                 line_obj = None
@@ -261,6 +263,18 @@ class PlotCanvas(FigureCanvas):
                 self._plot_storage[var] = (x_slice, y_slice, ax, obj_for_legend)
                 handles.append(obj_for_legend)
                 labels.append(var)
+
+            if group_values:
+                merged = np.concatenate([np.asarray(v, dtype=float) for v in group_values])
+                finite = merged[np.isfinite(merged)]
+                if finite.size > 0:
+                    ymin = float(np.min(finite))
+                    ymax = float(np.max(finite))
+                    span = ymax - ymin
+                    if span == 0:
+                        span = abs(ymax) if ymax != 0 else 1.0
+                    margin = span * 0.10
+                    ax.set_ylim(ymin - margin, ymax + margin)
 
             custom_axis_label = None
             if self.parent_window:
@@ -505,7 +519,7 @@ class MainWindow(QMainWindow):
 
         def add_row(key, title):
             row = QWidget(); hl = QHBoxLayout(row)
-            auto = QCheckBox("自动"); auto.setChecked(True)
+            auto = QCheckBox("自动"); auto.setChecked(False)
             mn = QDoubleSpinBox(); mx = QDoubleSpinBox(); tk = QDoubleSpinBox()
             for w in (mn, mx): w.setRange(-1e12, 1e12); w.setDecimals(6)
             tk.setRange(1e-12, 1e12); tk.setDecimals(6); tk.setValue(1.0)
@@ -513,10 +527,37 @@ class MainWindow(QMainWindow):
             hl.addWidget(QLabel(title)); hl.addWidget(auto); hl.addWidget(QLabel("最小")); hl.addWidget(mn); hl.addWidget(QLabel("最大")); hl.addWidget(mx); hl.addWidget(QLabel("刻度")); hl.addWidget(tk)
             self.ranges_layout.addWidget(row)
             self.range_widgets[key] = (auto, mn, mx, tk)
+            return auto, mn, mx, tk
 
-        add_row('x', 'X轴')
+        x_widgets = add_row('x', 'X轴')
         for idx, name in enumerate(axis_group_keys):
             add_row(idx, f"Y轴{idx}({name})")
+
+        # 默认值：从当前图中读取每个轴范围；Y轴为数据最大最小值±10%（由 draw_plot 已设置）
+        if getattr(self, "plot_canvas", None) and self.plot_canvas.axes_list:
+            try:
+                xax = self.plot_canvas.axes_list[0]
+                auto, mn, mx, tk = x_widgets
+                xmin, xmax = xax.get_xlim()
+                mn.setValue(float(xmin)); mx.setValue(float(xmax))
+                xt = xax.get_xticks()
+                if len(xt) >= 2:
+                    tk.setValue(float(abs(xt[1] - xt[0])))
+            except Exception:
+                pass
+
+            for idx, axy in enumerate(self.plot_canvas.axes_list):
+                if idx not in self.range_widgets:
+                    continue
+                auto, mn, mx, tk = self.range_widgets[idx]
+                try:
+                    ymin, ymax = axy.get_ylim()
+                    mn.setValue(float(ymin)); mx.setValue(float(ymax))
+                    span = ymax - ymin
+                    step = span / 5.0 if span > 0 else 1.0
+                    tk.setValue(float(step))
+                except Exception:
+                    pass
 
     def _gather_axis_ranges_from_ui(self):
         data = {}
