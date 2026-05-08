@@ -39,6 +39,18 @@ import matplotlib.font_manager as fm
 
 
 def set_chinese_font():
+    local_font = os.path.join(os.path.dirname(os.path.abspath(__file__)), "1.ttf")
+    if os.path.exists(local_font):
+        try:
+            fm.fontManager.addfont(local_font)
+            local_name = fm.FontProperties(fname=local_font).get_name()
+            plt.rcParams['font.family'] = 'sans-serif'
+            plt.rcParams['font.sans-serif'] = [local_name, 'Microsoft YaHei', 'SimHei', 'DejaVu Sans']
+            plt.rcParams['axes.unicode_minus'] = False
+            return local_name
+        except Exception:
+            pass
+
     candidates = []
     if platform.system() == "Windows":
         candidates = [
@@ -77,7 +89,8 @@ def set_chinese_font():
 
 PREFERRED_APP_FONT = set_chinese_font()
 # 显式设置 matplotlib 全局中文字体与负号显示
-rcParams['font.sans-serif'] = ['Microsoft YaHei']
+rcParams['font.family'] = 'sans-serif'
+rcParams['font.sans-serif'] = [PREFERRED_APP_FONT, 'Microsoft YaHei', 'SimHei', 'Noto Sans CJK SC', 'DejaVu Sans']
 rcParams['axes.unicode_minus'] = False
 # 如果运行环境缺少中文字体，Matplotlib 会发出 glyph missing 警告；
 # 这里抑制该类告警，避免影响程序使用。
@@ -286,6 +299,11 @@ class PlotCanvas(FigureCanvas):
         ax_main.set_title(title_text, fontsize=14, fontweight='bold', pad=10)
         if show_grid:
             ax_main.grid(True, linestyle='--', linewidth=0.7, alpha=0.35)
+
+        # 强制刻度字体，避免回退到 Arial 导致中文方框
+        for axis in self.axes_list:
+            for t in axis.get_xticklabels() + axis.get_yticklabels():
+                t.set_fontname(PREFERRED_APP_FONT or "Microsoft YaHei")
 
         legend = ax_main.legend(handles, labels, loc='upper left', bbox_to_anchor=(1.02, 1), frameon=True, fontsize=9)
         legend.set_draggable(True)
