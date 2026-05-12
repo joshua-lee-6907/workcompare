@@ -170,14 +170,36 @@ class ImageAnimatorGUI:
             try:
                 self.status_var.set("正在导出 MP4，请稍候...")
                 frames_np = [normalize_frame_size(img) for img in self.frames_pil]
-                iio.imwrite(out_file, frames_np, fps=fps, codec="libx264")
+
+                # 依次尝试多个编码参数，避免某些环境缺少 libx264 导致导出失败
+                attempts = [
+                    {"codec": "libx264", "pixelformat": "yuv420p"},
+                    {"codec": "h264", "pixelformat": "yuv420p"},
+                    {"codec": "mpeg4"},
+                    {},
+                ]
+
+                last_error = None
+                for params in attempts:
+                    try:
+                        iio.imwrite(out_file, frames_np, fps=fps, **params)
+                        last_error = None
+                        break
+                    except Exception as err:
+                        last_error = err
+
+                if last_error is not None:
+                    raise last_error
+
                 self.status_var.set(f"导出完成: {out_file}")
                 messagebox.showinfo("完成", f"MP4 已保存:\n{out_file}")
             except Exception as e:
                 self.status_var.set("导出失败")
                 messagebox.showerror(
                     "导出失败",
-                    f"无法导出 MP4:\n{e}\n\n请确保已安装 imageio 与 ffmpeg。",
+                    f"无法导出 MP4:\n{e}\n\n可尝试：\n"
+                    "1) 安装完整 ffmpeg（包含 x264）\n"
+                    "2) 或继续使用当前版本，程序会自动回退到 mpeg4 编码。",
                 )
 
         threading.Thread(target=worker, daemon=True).start()
