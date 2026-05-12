@@ -153,10 +153,23 @@ class ImageAnimatorGUI:
 
         fps = max(1, self.fps_var.get())
 
+        # 导出时要求所有帧尺寸一致，这里统一到首帧尺寸
+        base_w, base_h = self.frames_pil[0].size
+
+        def normalize_frame_size(img: Image.Image) -> np.ndarray:
+            """将任意尺寸帧缩放并居中贴到统一画布，保证 MP4 导出时 shape 一致。"""
+            canvas = Image.new("RGB", (base_w, base_h), (0, 0, 0))
+            frame = img.copy()
+            frame.thumbnail((base_w, base_h), Image.Resampling.LANCZOS)
+            x = (base_w - frame.width) // 2
+            y = (base_h - frame.height) // 2
+            canvas.paste(frame, (x, y))
+            return np.array(canvas)
+
         def worker():
             try:
                 self.status_var.set("正在导出 MP4，请稍候...")
-                frames_np = [np.array(img) for img in self.frames_pil]
+                frames_np = [normalize_frame_size(img) for img in self.frames_pil]
                 iio.imwrite(out_file, frames_np, fps=fps, codec="libx264")
                 self.status_var.set(f"导出完成: {out_file}")
                 messagebox.showinfo("完成", f"MP4 已保存:\n{out_file}")
