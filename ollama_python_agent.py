@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local Ollama agent: understand request -> generate JSON input -> run one fixed Python script."""
+"""Conversational Ollama agent: dialogue -> generate/update JSON -> run fixed script -> continue dialogue."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ from typing import Any
 from urllib import error, request
 
 SYSTEM_PROMPT = (
-    "你是一个 JSON 输入生成助手。"
-    "你的任务是根据用户需求，为目标 Python 脚本生成输入 JSON。"
-    "你必须只输出一个 JSON 对象，不要输出 markdown、解释、代码块。"
+    "你是一个任务编排助手。"
+    "你需要根据用户对话生成或更新 JSON 配置，然后运行固定 Python 脚本。"
+    "如果信息不足，先提出澄清问题；如果信息充分，只输出 JSON 对象。"
 )
 
 
@@ -24,120 +24,98 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
 
     def chat(self, model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": False,
-        }
-        data = json.dumps(payload).encode("utf-8")
+        payload = {"model": model, "messages": messages, "stream": False}
         req = request.Request(
             f"{self.base_url}/api/chat",
-            data=data,
+            data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
         try:
             with request.urlopen(req, timeout=120) as resp:
-                raw = resp.read().decode("utf-8")
+                return json.loads(resp.read().decode("utf-8"))
         except error.URLError as exc:
-            raise RuntimeError(f"Failed to connect to Ollama at {self.base_url}: {exc}") from exc
-
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Invalid JSON from Ollama: {raw[:500]}") from exc
+            raise RuntimeError(f"Failed to connect Ollama: {exc}") from exc
 
 
 def safe_resolve(path: str, cwd: Path) -> Path:
-    resolved = Path(path).expanduser().resolve()
-    if cwd != resolved and cwd not in resolved.parents:
+    p = Path(path).expanduser().resolve()
+    if cwd != p and cwd not in p.parents:
         raise ValueError(f"Path must stay inside working directory: {cwd}")
-    return resolved
-
-
-def read_schema(schema_path: Path | None) -> str:
-    if not schema_path:
-        return "未提供 schema，按最合理的结构生成 JSON。"
-    text = schema_path.read_text(encoding="utf-8")
-    return f"请严格参考以下 JSON schema/示例（纯文本）:\n{text}"
-
-
-def generate_input_json(model: str, base_url: str, task: str, schema_text: str) -> dict[str, Any]:
-    client = OllamaClient(base_url=base_url)
-    user_prompt = (
-        f"用户需求：{task}\n"
-        f"{schema_text}\n"
-        "现在只输出 JSON 对象。"
-    )
-    response = client.chat(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
-    content = response.get("message", {}).get("content", "").strip()
-    if not content:
-        raise RuntimeError("Model returned empty content.")
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Model output is not valid JSON: {content[:500]}") from exc
+    return p
 
 
 def run_script_with_json(script: Path, input_json: Path, timeout: int) -> dict[str, Any]:
     cmd = [sys.executable, str(script), str(input_json)]
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(Path.cwd()),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        proc = subprocess.run(cmd, cwd=str(Path.cwd()), capture_output=True, text=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": f"Execution timed out after {timeout}s", "cmd": cmd}
+        return {"ok": False, "error": f"timeout after {timeout}s", "cmd": cmd}
+    return {"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-6000:], "stderr": proc.stderr[-6000:], "cmd": cmd}
 
-    return {
-        "ok": proc.returncode == 0,
-        "cmd": cmd,
-        "returncode": proc.returncode,
-        "stdout": proc.stdout[-6000:],
-        "stderr": proc.stderr[-6000:],
-    }
+
+def try_parse_json(text: str) -> dict[str, Any] | None:
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def interactive_loop(model: str, base_url: str, script: Path, input_json_path: Path, schema_text: str, timeout: int) -> None:
+    client = OllamaClient(base_url)
+    history: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    print("输入 quit 退出。")
+    while True:
+        user = input("\n你: ").strip()
+        if user.lower() in {"quit", "exit", "q"}:
+            break
+        history.append({"role": "user", "content": user})
+
+        prompt = (
+            "当前目标脚本会读取一个 JSON 配置并启动 Excel 可视化。\n"
+            f"JSON 参考说明:\n{schema_text}\n"
+            "若信息不足请提问；若信息足够请仅输出 JSON 对象。"
+        )
+        work_messages = history + [{"role": "system", "content": prompt}]
+        reply = client.chat(model=model, messages=work_messages).get("message", {}).get("content", "")
+        history.append({"role": "assistant", "content": reply})
+
+        payload = try_parse_json(reply)
+        if payload is None:
+            print(f"助手: {reply}")
+            continue
+
+        input_json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        result = run_script_with_json(script, input_json_path, timeout)
+        summary = json.dumps(result, ensure_ascii=False, indent=2)
+        print("\n=== GENERATED_JSON ===")
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print("\n=== SCRIPT_RESULT ===")
+        print(summary)
+        history.append({"role": "user", "content": f"脚本执行结果如下，请继续协助我优化配置或排错:\n{summary}"})
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate JSON with Ollama and run one fixed Python script")
-    parser.add_argument("task", help="Natural language requirement from user")
-    parser.add_argument("--script", required=True, help="Target Python script path. It will receive one arg: input.json")
-    parser.add_argument("--input-json", default="agent_input.json", help="JSON file path to write")
-    parser.add_argument("--schema", help="Optional schema/example file for expected JSON structure")
-    parser.add_argument("--model", default="qwen2.5:latest", help="Ollama model name")
+    parser = argparse.ArgumentParser(description="Conversational JSON->Python orchestrator")
+    parser.add_argument("--script", default="excel_visualizer.py", help="固定执行脚本")
+    parser.add_argument("--input-json", default="agent_input.json", help="生成 JSON 文件")
+    parser.add_argument("--schema", default="excel_visualizer_skill.json", help="JSON 说明/skill 文件")
+    parser.add_argument("--model", default="qwen2.5:latest")
     parser.add_argument("--base-url", default=os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"))
-    parser.add_argument("--timeout", type=int, default=60, help="Script execution timeout in seconds")
+    parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
 
     cwd = Path.cwd().resolve()
     script = safe_resolve(args.script, cwd)
     input_json_path = safe_resolve(args.input_json, cwd)
-    schema_path = safe_resolve(args.schema, cwd) if args.schema else None
-
+    schema_path = safe_resolve(args.schema, cwd)
     if not script.exists() or script.suffix != ".py":
         raise RuntimeError(f"Invalid script path: {script}")
-
-    schema_text = read_schema(schema_path)
-    payload = generate_input_json(args.model, args.base_url, args.task, schema_text)
-    input_json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    result = run_script_with_json(script, input_json_path, args.timeout)
-
-    print("=== GENERATED_JSON ===")
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
-    print("=== SCRIPT_RESULT ===")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    schema_text = schema_path.read_text(encoding="utf-8") if schema_path.exists() else "{}"
+    interactive_loop(args.model, args.base_url, script, input_json_path, schema_text, args.timeout)
 
 
 if __name__ == "__main__":
