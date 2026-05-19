@@ -3,7 +3,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Iterable
 
 import requests
 
@@ -92,11 +92,26 @@ def save_memory(memory: Dict[str, Any]):
         json.dump(memory, f, ensure_ascii=False, indent=2)
 
 
+def _zh_ngrams(text: str, n_values: Iterable[int] = (2, 3)) -> List[str]:
+    grams = []
+    chars = re.sub(r"[^\u4e00-\u9fff]", "", text)
+    for n in n_values:
+        if len(chars) >= n:
+            grams.extend([chars[i:i+n] for i in range(len(chars) - n + 1)])
+    return grams
+
+
 def tokenize(text: str) -> List[str]:
     text = text.lower()
     zh_chunks = re.findall(r"[\u4e00-\u9fff]+", text)
     en_chunks = re.findall(r"[a-z0-9_\-]+", text)
-    return zh_chunks + en_chunks
+
+    tokens = []
+    tokens.extend(en_chunks)
+    tokens.extend(zh_chunks)
+    for chunk in zh_chunks:
+        tokens.extend(_zh_ngrams(chunk))
+    return [t for t in tokens if t]
 
 
 def score_similarity(query: str, target: str) -> float:
@@ -104,8 +119,46 @@ def score_similarity(query: str, target: str) -> float:
     t = set(tokenize(target))
     if not q or not t:
         return 0.0
-    return len(q & t) / len(q | t)
 
+    jaccard = len(q & t) / len(q | t)
+    query_l = query.lower()
+    target_l = target.lower()
+    substring_bonus = 0.0
+    if query_l and target_l:
+        if query_l in target_l or target_l in query_l:
+            substring_bonus = 0.25
+
+    return min(1.0, jaccard + substring_bonus)
+
+
+
+
+def parse_memory_turns(memory: Dict[str, Any]) -> List[Turn]:
+    turns: List[Turn] = []
+
+    # 格式1：{"turns": [{"question":..., "answer":...}]}
+    for t in memory.get("turns", []):
+        q = str(t.get("question", "")).strip()
+        a = str(t.get("answer", "")).strip()
+        if q and a:
+            turns.append(Turn(q, a, str(t.get("created_at", ""))))
+
+    # 格式2：{"messages": [{"role":"user|assistant", "content":...}, ...]}
+    msgs = memory.get("messages", [])
+    if isinstance(msgs, list):
+        pending_q = ""
+        for m in msgs:
+            role = str(m.get("role", "")).strip().lower()
+            content = str(m.get("content", "")).strip()
+            if not content:
+                continue
+            if role == "user":
+                pending_q = content
+            elif role == "assistant" and pending_q:
+                turns.append(Turn(pending_q, content, str(m.get("created_at", ""))))
+                pending_q = ""
+
+    return turns
 
 def retrieve_context(user_input: str, skills: Dict[str, Any], memory: Dict[str, Any], top_k: int = 5) -> Tuple[List[str], List[Turn]]:
     skill_texts = []
@@ -116,13 +169,11 @@ def retrieve_context(user_input: str, skills: Dict[str, Any], memory: Dict[str, 
             skill_texts.append((sim, blob))
 
     mem_turns: List[Turn] = []
-    for t in memory.get("turns", []):
-        q = t.get("question", "")
-        a = t.get("answer", "")
-        blob = f"{q} {a}"
+    for turn in parse_memory_turns(memory):
+        blob = f"{turn.question} {turn.answer}"
         sim = score_similarity(user_input, blob)
         if sim > 0:
-            mem_turns.append((sim, Turn(q, a, t.get("created_at", ""))))
+            mem_turns.append((sim, turn))
 
     skill_texts.sort(key=lambda x: x[0], reverse=True)
     mem_turns.sort(key=lambda x: x[0], reverse=True)
