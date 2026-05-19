@@ -1,6 +1,8 @@
 {
   "purpose": "给 excel_visualizer.py 生成配置 JSON",
-  "required": ["file_path"],
+  "required": [
+    "file_path"
+  ],
   "optional": {
     "sheet_name": "工作表名，不填则默认第一个",
     "auto_load": "是否自动加载sheet，默认true",
@@ -12,19 +14,25 @@
     "plot_mode": "scatter | line | line_scatter",
     "start_idx": "起始索引",
     "end_idx": "结束索引",
-    "show_grid": "是否显示网格"
+    "show_grid": "是否显示网格",
+    "index_range": "{\"start\": 起始序号, \"end\": 结束序号}，与 start_idx/end_idx 二选一或并存，优先 start_idx/end_idx",
+    "auto_plot": "是否在加载配置后立即绘图，默认 true"
   },
   "notes": [
     "必须输出严格 JSON 对象，不能输出 markdown",
     "file_path 必须是可访问的 xls/xlsx 文件",
-    "如果用户信息不足，应先追问再输出 JSON"
+    "如果用户信息不足，应先追问再输出 JSON",
+    "建议同时给出 start_idx/end_idx（或 index_range.start/end）控制绘制序号范围。"
   ],
   "example": {
     "file_path": "./data/demo.xlsx",
     "sheet_name": "Sheet1",
     "auto_load": true,
     "x_var": "时间",
-    "y_vars": ["温度", "湿度"],
+    "y_vars": [
+      "温度",
+      "湿度"
+    ],
     "title": "环境监测",
     "x_label": "时间",
     "y_label": "数值",

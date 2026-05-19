@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 from urllib import error, request
@@ -45,29 +46,55 @@ def safe_resolve(path: str, cwd: Path) -> Path:
     return p
 
 
-def run_script_with_json(script: Path, input_json: Path, timeout: int) -> dict[str, Any]:
+def launch_visualizer(script: Path, input_json: Path) -> tuple[subprocess.Popen[str] | None, dict[str, Any]]:
     cmd = [sys.executable, str(script), str(input_json)]
     try:
-        proc = subprocess.run(cmd, cwd=str(Path.cwd()), capture_output=True, text=True, timeout=timeout, check=False)
+        proc = subprocess.Popen(cmd, cwd=str(Path.cwd()), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    except Exception as exc:
+        return None, {"ok": False, "error": f"failed to launch: {exc}", "cmd": cmd}
+
+    time.sleep(0.6)
+    if proc.poll() is not None:
+        out, err = proc.communicate()
+        return None, {"ok": False, "error": "visualizer exited immediately", "returncode": proc.returncode, "stdout": out[-6000:], "stderr": err[-6000:], "cmd": cmd}
+    return proc, {"ok": True, "pid": proc.pid, "cmd": cmd}
+
+
+def stop_process(proc: subprocess.Popen[str] | None) -> None:
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=3)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": f"timeout after {timeout}s", "cmd": cmd}
-    return {"ok": proc.returncode == 0, "returncode": proc.returncode, "stdout": proc.stdout[-6000:], "stderr": proc.stderr[-6000:], "cmd": cmd}
+        proc.kill()
 
 
 def try_parse_json(text: str) -> dict[str, Any] | None:
     text = text.strip()
     if not text:
         return None
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
+    candidates = [text]
+    if "```" in text:
+        parts = text.split("```")
+        candidates.extend(part.strip() for part in parts if part.strip())
+    for c in candidates:
+        if c.startswith("json"):
+            c = c[4:].strip()
+        try:
+            data = json.loads(c)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            continue
+    return None
 
 
 def interactive_loop(model: str, base_url: str, script: Path, input_json_path: Path, schema_text: str, timeout: int) -> None:
     client = OllamaClient(base_url)
     history: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     print("输入 quit 退出。")
+    visualizer_proc: subprocess.Popen[str] | None = None
     while True:
         user = input("\n你: ").strip()
         if user.lower() in {"quit", "exit", "q"}:
@@ -89,13 +116,18 @@ def interactive_loop(model: str, base_url: str, script: Path, input_json_path: P
             continue
 
         input_json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        result = run_script_with_json(script, input_json_path, timeout)
+        stop_process(visualizer_proc)
+        visualizer_proc, result = launch_visualizer(script, input_json_path)
         summary = json.dumps(result, ensure_ascii=False, indent=2)
         print("\n=== GENERATED_JSON ===")
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         print("\n=== SCRIPT_RESULT ===")
         print(summary)
-        history.append({"role": "user", "content": f"脚本执行结果如下，请继续协助我优化配置或排错:\n{summary}"})
+        if result.get("ok"):
+            print("助手: 绘图程序已启动。你可以继续输入新需求，我会重写 JSON 并刷新绘图。")
+        history.append({"role": "user", "content": f"绘图脚本执行状态如下，请继续协助我优化配置或排错:\n{summary}"})
+
+    stop_process(visualizer_proc)
 
 
 def main() -> None:

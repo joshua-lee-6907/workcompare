@@ -147,6 +147,8 @@ class MainWindow(QMainWindow):
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self.update_status)
         self.status_timer.start(2000)
+        self._cfg_start_idx = None
+        self._cfg_end_idx = None
         self.apply_config()
 
     def update_status(self):
@@ -201,6 +203,12 @@ class MainWindow(QMainWindow):
             self.yname_edit.setText(str(self.config.get("y_label")))
         if self.config.get("show_grid") is not None:
             self.grid_cb.setChecked(bool(self.config.get("show_grid")))
+
+        index_range = self.config.get("index_range", {}) if isinstance(self.config.get("index_range"), dict) else {}
+        start_idx = self.config.get("start_idx", index_range.get("start"))
+        end_idx = self.config.get("end_idx", index_range.get("end"))
+        self._cfg_start_idx = start_idx if isinstance(start_idx, int) else None
+        self._cfg_end_idx = end_idx if isinstance(end_idx, int) else None
         mode_map = {"scatter": "散点图", "line": "折线图", "line_scatter": "折线+散点图"}
         if self.config.get("plot_mode") in mode_map:
             self.mode_combo.setCurrentText(mode_map[self.config.get("plot_mode")])
@@ -212,10 +220,10 @@ class MainWindow(QMainWindow):
         self.data_processor.load_from_excel(file_path, sheet)
         names = self.data_processor.get_variable_names(); length = max(0, len(self.data_processor.get_variable_data(names[0])) - 1) if names else 0
         self.start_spin.setMaximum(length); self.end_spin.setMaximum(length); self.end_spin.setValue(length)
-        if isinstance(self.config.get("start_idx"), int):
-            self.start_spin.setValue(max(0, min(length, self.config.get("start_idx"))))
-        if isinstance(self.config.get("end_idx"), int):
-            self.end_spin.setValue(max(0, min(length, self.config.get("end_idx"))))
+        if isinstance(self._cfg_start_idx, int):
+            self.start_spin.setValue(max(0, min(length, self._cfg_start_idx)))
+        if isinstance(self._cfg_end_idx, int):
+            self.end_spin.setValue(max(0, min(length, self._cfg_end_idx)))
         self.x_combo.clear(); self.x_combo.addItems(names); self.y_list.clear(); self.y_list.addItems(names)
         if self.config.get("x_var") in names:
             self.x_combo.setCurrentText(self.config["x_var"])
@@ -223,6 +231,9 @@ class MainWindow(QMainWindow):
             it = self.y_list.item(i)
             if it.text() in self.config.get("y_vars", []):
                 it.setSelected(True)
+
+        if self.config.get("auto_plot", True):
+            self.plot_data()
 
     def plot_data(self):
         yitems = self.y_list.selectedItems(); xvar = self.x_combo.currentText().strip()
