@@ -163,6 +163,7 @@ class PlotWindow(QMainWindow):
 class ExcelVisualizerPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("enterpriseAnalysisPage")
         self.dp = DataProcessor()
         self.plot_window = PlotWindow()
         self._build_ui()
