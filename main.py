@@ -284,74 +284,52 @@ class PlotCanvas(FigureCanvas):
 
 
 
-class PlotWindow(QWidget):
+class DataChartPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("图表展示窗口")
-        self.resize(1320, 820)
+        self.setObjectName("dataChartPage")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        self.canvas = PlotCanvas(parent_window=None)
-        self.toolbar = NavigationToolbar(self.canvas, self)
-        layout.addWidget(self.toolbar)
-        layout.addWidget(self.canvas)
+        card = SimpleCardWidget(self)
+        cl = QVBoxLayout(card)
+        cl.addWidget(TitleLabel("数据图表页", self))
+        cl.addWidget(BodyLabel("图表会展示在此页面。请到“功能页”加载数据并点击生成图表。", self))
+
+        self.plot_canvas = PlotCanvas(parent_window=None)
+        self.toolbar = NavigationToolbar(self.plot_canvas, self)
+        cl.addWidget(self.toolbar)
+        cl.addWidget(self.plot_canvas)
+        layout.addWidget(card)
+
 
 class ExcelVisualizerPage(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, chart_page, parent=None):
         super().__init__(parent)
         self.setObjectName("functionPage")
+        self.chart_page = chart_page
         self.data_processor = DataProcessor()
         self.range_widgets = {}
         self.axis_name_edits = {}
-        self.plot_window = PlotWindow(self)
         self._build_ui()
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
-        splitter = QSplitter(Qt.Horizontal, self)
-        splitter.setChildrenCollapsible(False)
-        main_layout.addWidget(splitter)
         self.control_panel = self.create_control_panel()
-        splitter.addWidget(self.control_panel)
-        self.plot_panel = self.create_plot_widget()
-        splitter.addWidget(self.plot_panel)
-        splitter.setSizes([480, 1170])
+        main_layout.addWidget(self.control_panel)
 
         self.setStyleSheet("""
-            QWidget {
-                background: #F3F4F6;
-                color: #0F172A;
-            }
-            QGroupBox {
-                background: #FFFFFF;
-                border: 1px solid #E2E8F0;
-                border-radius: 10px;
-                margin-top: 10px;
-                padding: 8px;
-                color: #1F2937;
-                font-weight: 600;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 6px;
-            }
+            QWidget { background: #F3F4F6; color: #0F172A; }
+            QGroupBox { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; margin-top: 10px; padding: 8px; color: #1F2937; font-weight: 600; }
+            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; }
         """)
-
-
-    def create_plot_widget(self):
-        widget = QWidget(self)
-        layout = QVBoxLayout(widget)
-        tip = BodyLabel("图表将以独立窗口弹出显示（可拖动、可调整大小）", self)
-        layout.addWidget(tip)
-        layout.addStretch(1)
-        return widget
 
     def create_control_panel(self):
         scroll = ScrollArea(self)
         scroll.setWidgetResizable(True)
         panel = QWidget(); scroll.setWidget(panel)
-        layout = QVBoxLayout(panel)
+        root = QHBoxLayout(panel)
+
+        left_col = QVBoxLayout()
+        right_col = QVBoxLayout()
 
         self.file_label = LineEdit(); self.file_label.setReadOnly(True); self.file_label.setPlaceholderText("未选择文件")
         btn_file = PrimaryPushButton("选择 Excel 文件", self); btn_file.clicked.connect(self.choose_excel_file)
@@ -371,32 +349,37 @@ class ExcelVisualizerPage(QWidget):
         self.axis_radio_buttons = []
         self.axis_radio_layout = QVBoxLayout()
         self.offsets_layout = QVBoxLayout()
-        self.ranges_layout = QVBoxLayout()
         self.axis_name_layout = QVBoxLayout()
 
-        def pack(title, items):
+        def pack(container, title, items):
             box = QGroupBox(title); bl = QVBoxLayout(box)
             for it in items:
-                if isinstance(it, QHBoxLayout) or isinstance(it, QVBoxLayout): bl.addLayout(it)
+                if isinstance(it, (QHBoxLayout, QVBoxLayout)): bl.addLayout(it)
                 else: bl.addWidget(it)
-            layout.addWidget(box)
+            container.addWidget(box)
 
         r1 = QHBoxLayout(); r1.addWidget(btn_file); r1.addWidget(self.file_label, 1)
         r2 = QHBoxLayout(); r2.addWidget(QLabel("Sheet:")); r2.addWidget(self.sheet_combo, 1); r2.addWidget(btn_load)
-        pack("数据源", [r1, r2])
-        pack("标题与坐标轴", [self.title_edit, self.xname_edit, self.yname_edit])
-        pack("图型", [self.mode_combo])
-        pack("数据索引", [self.start_spin, self.end_spin])
-        pack("变量选择", [self.x_combo, self.y_list])
-        pack("网格", [self.grid_cb])
-        pack("活动轴", [self.axis_radio_layout])
-        pack("轴偏移", [self.offsets_layout])
-        pack("轴范围", [self.ranges_layout])
-        pack("Y轴重命名", [self.axis_name_layout])
+        pack(left_col, "数据源", [r1, r2])
+        pack(left_col, "标题与坐标轴", [self.title_edit, self.xname_edit, self.yname_edit])
+        pack(left_col, "图型", [self.mode_combo])
+        pack(left_col, "数据索引", [self.start_spin, self.end_spin])
 
+        pack(right_col, "变量选择", [self.x_combo, self.y_list])
+        pack(right_col, "网格", [self.grid_cb])
+        pack(right_col, "活动轴", [self.axis_radio_layout])
+        pack(right_col, "轴偏移", [self.offsets_layout])
+        pack(right_col, "Y轴重命名", [self.axis_name_layout])
+
+        btn_row = QHBoxLayout()
         btn_plot = PrimaryPushButton("生成图表", self); btn_plot.clicked.connect(self.plot_data)
         btn_save = PushButton("保存无损图片", self); btn_save.clicked.connect(self.save_figure_lossless)
-        layout.addWidget(btn_plot); layout.addWidget(btn_save); layout.addStretch(1)
+        btn_row.addWidget(btn_plot); btn_row.addWidget(btn_save)
+        right_col.addLayout(btn_row)
+        right_col.addStretch(1)
+
+        root.addLayout(left_col, 1)
+        root.addLayout(right_col, 1)
         return scroll
 
     def choose_excel_file(self):
@@ -472,9 +455,9 @@ class ExcelVisualizerPage(QWidget):
         return txt if txt else None
 
     def _set_axis_offset(self, idx, val):
-        self.plot_window.canvas._axis_outward[idx] = int(val)
-        self.plot_window.canvas._update_axis_positions()
-        self.plot_window.canvas.draw_idle()
+        self.chart_page.plot_canvas._axis_outward[idx] = int(val)
+        self.chart_page.plot_canvas._update_axis_positions()
+        self.chart_page.plot_canvas.draw_idle()
 
     def _gather_axis_ranges_from_ui(self):
         return {}
@@ -495,17 +478,16 @@ class ExcelVisualizerPage(QWidget):
             e = max_idx
             self.end_spin.setValue(e)
         mode_map = {"散点图": "scatter", "折线图": "line", "折线+散点图": "line_scatter"}
-        self.plot_window.canvas.draw_plot(xdata, ydict, self.xname_edit.text().strip() or xvar,
-                                   self.title_edit.text().strip() or "科学数据可视化",
-                                   self.yname_edit.text().strip() or "Y", s, e,
-                                   show_grid=self.grid_cb.isChecked(),
-                                   plot_mode=mode_map.get(self.mode_combo.currentText(), "scatter"),
-                                   axis_ranges=self._gather_axis_ranges_from_ui())
-        self.plot_window.show()
-        self.plot_window.raise_()
+        self.chart_page.plot_canvas.parent_window = self
+        self.chart_page.plot_canvas.draw_plot(xdata, ydict, self.xname_edit.text().strip() or xvar,
+                                              self.title_edit.text().strip() or "科学数据可视化",
+                                              self.yname_edit.text().strip() or "Y", s, e,
+                                              show_grid=self.grid_cb.isChecked(),
+                                              plot_mode=mode_map.get(self.mode_combo.currentText(), "scatter"),
+                                              axis_ranges=self._gather_axis_ranges_from_ui())
 
     def save_figure_lossless(self):
-        if not self.plot_window.canvas.figure.axes:
+        if not self.chart_page.plot_canvas.figure.axes:
             QMessageBox.warning(self, "提示", "请先生成图表")
             return
         path, selected_filter = QFileDialog.getSaveFileName(self, "保存无损图片", "plot.png",
@@ -522,30 +504,14 @@ class ExcelVisualizerPage(QWidget):
         if fmt is None:
             QMessageBox.warning(self, "提示", "请保存为 PNG / TIFF / SVG / PDF")
             return
-        self.plot_window.canvas.figure.savefig(path, dpi=300, format=fmt, bbox_inches="tight", pad_inches=0.05, facecolor="white", edgecolor="white")
+        self.chart_page.plot_canvas.figure.savefig(path, dpi=300, format=fmt, bbox_inches="tight", pad_inches=0.05, facecolor="white", edgecolor="white")
 
-
-
-
-class DataChartPage(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("dataChartPage")
-        layout = QVBoxLayout(self)
-        title = TitleLabel("数据图表页", self)
-        desc = BodyLabel("此页用于图表说明与导航。请通过侧边栏切换到“功能页”进行加载数据、指定 X/Y 并生成图表。", self)
-        card = SimpleCardWidget(self)
-        cl = QVBoxLayout(card)
-        cl.addWidget(title)
-        cl.addWidget(desc)
-        layout.addWidget(card)
-        layout.addStretch(1)
 
 class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
         self.chart_page = DataChartPage(self)
-        self.function_page = ExcelVisualizerPage(self)
+        self.function_page = ExcelVisualizerPage(self.chart_page, self)
         self.addSubInterface(self.chart_page, FluentIcon.LIBRARY, "数据图表")
         self.addSubInterface(self.function_page, FluentIcon.SETTING, "功能页")
         self.setWindowTitle("Excel 数据可视化")
