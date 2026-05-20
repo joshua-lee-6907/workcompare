@@ -22,7 +22,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
@@ -299,15 +299,12 @@ class PlotWindow(QWidget):
 class ExcelVisualizerPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("enterpriseAnalysisPage")
+        self.setObjectName("functionPage")
         self.data_processor = DataProcessor()
         self.range_widgets = {}
         self.axis_name_edits = {}
         self.plot_window = PlotWindow(self)
         self._build_ui()
-        self.status_timer = QTimer(self)
-        self.status_timer.timeout.connect(self.update_status)
-        self.status_timer.start(2000)
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -319,8 +316,6 @@ class ExcelVisualizerPage(QWidget):
         self.plot_panel = self.create_plot_widget()
         splitter.addWidget(self.plot_panel)
         splitter.setSizes([480, 1170])
-        self.status_label = BodyLabel("就绪", self)
-        main_layout.addWidget(self.status_label)
 
         self.setStyleSheet("""
             QWidget {
@@ -343,8 +338,6 @@ class ExcelVisualizerPage(QWidget):
             }
         """)
 
-    def update_status(self):
-        self.status_label.setText(f"变量: {len(self.data_processor.get_variable_names())} | 行数: {self.data_processor.get_data_length()}")
 
     def create_plot_widget(self):
         widget = QWidget(self)
@@ -530,14 +523,31 @@ class ExcelVisualizerPage(QWidget):
             QMessageBox.warning(self, "提示", "请保存为 PNG / TIFF / SVG / PDF")
             return
         self.plot_window.canvas.figure.savefig(path, dpi=300, format=fmt, bbox_inches="tight", pad_inches=0.05, facecolor="white", edgecolor="white")
-        self.status_label.setText(f"已保存: {path}")
 
+
+
+
+class DataChartPage(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("dataChartPage")
+        layout = QVBoxLayout(self)
+        title = TitleLabel("数据图表页", self)
+        desc = BodyLabel("此页用于图表说明与导航。请通过侧边栏切换到“功能页”进行加载数据、指定 X/Y 并生成图表。", self)
+        card = SimpleCardWidget(self)
+        cl = QVBoxLayout(card)
+        cl.addWidget(title)
+        cl.addWidget(desc)
+        layout.addWidget(card)
+        layout.addStretch(1)
 
 class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
-        self.page = ExcelVisualizerPage(self)
-        self.addSubInterface(self.page, FluentIcon.LIBRARY, "Excel 可视化")
+        self.chart_page = DataChartPage(self)
+        self.function_page = ExcelVisualizerPage(self)
+        self.addSubInterface(self.chart_page, FluentIcon.LIBRARY, "数据图表")
+        self.addSubInterface(self.function_page, FluentIcon.SETTING, "功能页")
         self.setWindowTitle("Excel 数据可视化")
         self.setWindowIcon(QIcon())
         self.resize(1650, 1000)
