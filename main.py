@@ -133,6 +133,31 @@ plt.rcParams.update({"axes.grid": True, "grid.linestyle": "--", "grid.alpha": 0.
 warnings.filterwarnings("ignore", message=r"Glyph .* missing from font")
 
 
+
+# ====== 可调布局参数（UI 占比调节）======
+# 说明：只改下面这些数字即可快速调整页面占比与观感
+UI_TUNING = {
+    # 主窗口初始大小
+    "window_width": 1650,
+    "window_height": 1000,
+
+    # 功能页左右两列占比（left:right）
+    "function_left_stretch": 1,
+    "function_right_stretch": 1,
+
+    # 数据图表页：标题区与图表区比例（title+desc+toolbar : canvas）
+    # 值越大，图表区越高
+    "chart_canvas_stretch": 1,
+
+    # 数据图表页标题视觉参数
+    "chart_title_min_height": 36,
+    "chart_title_font_px": 24,
+
+    # 页面边距和控件间距
+    "page_margin": 12,
+    "page_spacing": 10,
+}
+
 def axis_group_key(var_name: str):
     if not isinstance(var_name, str) or var_name == "":
         return var_name
@@ -289,15 +314,25 @@ class DataChartPage(QWidget):
         super().__init__(parent)
         self.setObjectName("dataChartPage")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"])
+        layout.setSpacing(UI_TUNING["page_spacing"])
+
         card = SimpleCardWidget(self)
         cl = QVBoxLayout(card)
-        cl.addWidget(TitleLabel("数据图表页", self))
-        cl.addWidget(BodyLabel("图表会展示在此页面。请到“功能页”加载数据并点击生成图表。", self))
+        cl.setContentsMargins(UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"])
+        cl.setSpacing(UI_TUNING["page_spacing"])
+
+        title = TitleLabel("数据图表页", self)
+        title.setMinimumHeight(UI_TUNING["chart_title_min_height"])
+        title.setStyleSheet(f"font-size: {UI_TUNING['chart_title_font_px']}px; font-weight: 700;")
+        desc = BodyLabel("图表会展示在此页面。请到“功能页”加载数据并点击生成图表。", self)
+        cl.addWidget(title, 0)
+        cl.addWidget(desc, 0)
 
         self.plot_canvas = PlotCanvas(parent_window=None)
         self.toolbar = NavigationToolbar(self.plot_canvas, self)
-        cl.addWidget(self.toolbar)
-        cl.addWidget(self.plot_canvas)
+        cl.addWidget(self.toolbar, 0)
+        cl.addWidget(self.plot_canvas, UI_TUNING["chart_canvas_stretch"])
         layout.addWidget(card)
 
 
@@ -313,6 +348,8 @@ class ExcelVisualizerPage(QWidget):
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"])
+        main_layout.setSpacing(UI_TUNING["page_spacing"])
         self.control_panel = self.create_control_panel()
         main_layout.addWidget(self.control_panel)
 
@@ -327,9 +364,13 @@ class ExcelVisualizerPage(QWidget):
         scroll.setWidgetResizable(True)
         panel = QWidget(); scroll.setWidget(panel)
         root = QHBoxLayout(panel)
+        root.setContentsMargins(UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"])
+        root.setSpacing(UI_TUNING["page_spacing"])
 
         left_col = QVBoxLayout()
+        left_col.setSpacing(UI_TUNING["page_spacing"])
         right_col = QVBoxLayout()
+        right_col.setSpacing(UI_TUNING["page_spacing"])
 
         self.file_label = LineEdit(); self.file_label.setReadOnly(True); self.file_label.setPlaceholderText("未选择文件")
         btn_file = PrimaryPushButton("选择 Excel 文件", self); btn_file.clicked.connect(self.choose_excel_file)
@@ -378,8 +419,8 @@ class ExcelVisualizerPage(QWidget):
         right_col.addLayout(btn_row)
         right_col.addStretch(1)
 
-        root.addLayout(left_col, 1)
-        root.addLayout(right_col, 1)
+        root.addLayout(left_col, UI_TUNING["function_left_stretch"])
+        root.addLayout(right_col, UI_TUNING["function_right_stretch"])
         return scroll
 
     def choose_excel_file(self):
@@ -516,7 +557,7 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.function_page, FluentIcon.SETTING, "功能页")
         self.setWindowTitle("Excel 数据可视化")
         self.setWindowIcon(QIcon())
-        self.resize(1650, 1000)
+        self.resize(UI_TUNING["window_width"], UI_TUNING["window_height"])
 
 
 def main():
