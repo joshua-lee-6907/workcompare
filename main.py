@@ -227,7 +227,7 @@ class PlotCanvas(FigureCanvas):
         x_slice = np.asarray(x_data)[start_idx:end_idx + 1]
         ax_main = self.figure.add_subplot(111)
         self.axes_list.append(ax_main)
-        colors = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf", "#8c564b"]
+        colors = ["#2563EB", "#F59E0B", "#10B981", "#7C3AED", "#DC2626", "#0284C7", "#64748B"]
 
         groups = {}
         for name in y_data_dict:
@@ -282,6 +282,20 @@ class PlotCanvas(FigureCanvas):
         self.draw()
 
 
+
+
+class PlotWindow(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("图表展示窗口")
+        self.resize(1320, 820)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        self.canvas = PlotCanvas(parent_window=None)
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        layout.addWidget(self.toolbar)
+        layout.addWidget(self.canvas)
+
 class ExcelVisualizerPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -289,6 +303,7 @@ class ExcelVisualizerPage(QWidget):
         self.data_processor = DataProcessor()
         self.range_widgets = {}
         self.axis_name_edits = {}
+        self.plot_window = PlotWindow(self)
         self._build_ui()
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.update_status)
@@ -307,16 +322,36 @@ class ExcelVisualizerPage(QWidget):
         self.status_label = BodyLabel("就绪", self)
         main_layout.addWidget(self.status_label)
 
+        self.setStyleSheet("""
+            QWidget {
+                background: #F3F4F6;
+                color: #0F172A;
+            }
+            QGroupBox {
+                background: #FFFFFF;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                margin-top: 10px;
+                padding: 8px;
+                color: #1F2937;
+                font-weight: 600;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 6px;
+            }
+        """)
+
     def update_status(self):
         self.status_label.setText(f"变量: {len(self.data_processor.get_variable_names())} | 行数: {self.data_processor.get_data_length()}")
 
     def create_plot_widget(self):
         widget = QWidget(self)
         layout = QVBoxLayout(widget)
-        self.plot_canvas = PlotCanvas(parent_window=self)
-        self.toolbar = NavigationToolbar(self.plot_canvas, self)
-        layout.addWidget(self.toolbar)
-        layout.addWidget(self.plot_canvas)
+        tip = BodyLabel("图表将以独立窗口弹出显示（可拖动、可调整大小）", self)
+        layout.addWidget(tip)
+        layout.addStretch(1)
         return widget
 
     def create_control_panel(self):
@@ -444,9 +479,9 @@ class ExcelVisualizerPage(QWidget):
         return txt if txt else None
 
     def _set_axis_offset(self, idx, val):
-        self.plot_canvas._axis_outward[idx] = int(val)
-        self.plot_canvas._update_axis_positions()
-        self.plot_canvas.draw_idle()
+        self.plot_window.canvas._axis_outward[idx] = int(val)
+        self.plot_window.canvas._update_axis_positions()
+        self.plot_window.canvas.draw_idle()
 
     def _gather_axis_ranges_from_ui(self):
         return {}
@@ -467,15 +502,17 @@ class ExcelVisualizerPage(QWidget):
             e = max_idx
             self.end_spin.setValue(e)
         mode_map = {"散点图": "scatter", "折线图": "line", "折线+散点图": "line_scatter"}
-        self.plot_canvas.draw_plot(xdata, ydict, self.xname_edit.text().strip() or xvar,
+        self.plot_window.canvas.draw_plot(xdata, ydict, self.xname_edit.text().strip() or xvar,
                                    self.title_edit.text().strip() or "科学数据可视化",
                                    self.yname_edit.text().strip() or "Y", s, e,
                                    show_grid=self.grid_cb.isChecked(),
                                    plot_mode=mode_map.get(self.mode_combo.currentText(), "scatter"),
                                    axis_ranges=self._gather_axis_ranges_from_ui())
+        self.plot_window.show()
+        self.plot_window.raise_()
 
     def save_figure_lossless(self):
-        if not self.plot_canvas.figure.axes:
+        if not self.plot_window.canvas.figure.axes:
             QMessageBox.warning(self, "提示", "请先生成图表")
             return
         path, selected_filter = QFileDialog.getSaveFileName(self, "保存无损图片", "plot.png",
@@ -492,7 +529,7 @@ class ExcelVisualizerPage(QWidget):
         if fmt is None:
             QMessageBox.warning(self, "提示", "请保存为 PNG / TIFF / SVG / PDF")
             return
-        self.plot_canvas.figure.savefig(path, dpi=300, format=fmt, bbox_inches="tight", pad_inches=0.05, facecolor="white", edgecolor="white")
+        self.plot_window.canvas.figure.savefig(path, dpi=300, format=fmt, bbox_inches="tight", pad_inches=0.05, facecolor="white", edgecolor="white")
         self.status_label.setText(f"已保存: {path}")
 
 
