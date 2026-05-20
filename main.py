@@ -310,6 +310,7 @@ class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
         page = ExcelVisualizerPage(self)
+        page.setObjectName("enterpriseAnalysisPage")
         self.addSubInterface(page, FluentIcon.LIBRARY, "企业数据分析")
         self.setWindowTitle("企业数据分析管理系统")
         self.resize(1680, 960)
