@@ -1,96 +1,574 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import subprocess
-import webbrowser
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Excel 数据交互式可视化（支持 xls/xlsx）
+- 读取 xls/xlsx 文件（第一行为变量名，每列一个变量）
+- 用户选择文件与 sheet
+- 中文字体与科学风格
+- 可选图型：折线图 / 散点图 / 折线+散点图
+- 可修改图名、X轴名、Y轴名
+- 图片可保存为无损格式（PNG/TIFF/SVG/PDF）
+
+保留核心功能：多Y变量、按变量名前缀自动分组多坐标轴、图例点选显隐、轴范围/轴偏移可调。
+"""
+
 import os
-import signal
-import psutil  # 需要安装：pip install psutil
+import re
+import sys
+import platform
+import warnings
 
-# 定义按钮和对应的exe文件名
-button_info = [
-    ("读取网页", "readweb.exe"),
-    ("预处理网页", "preweb.exe"),
-    ("计算网页", "calweb.exe"),
-    ("数据网页", "dataweb.exe"),
-    ("Q1D网页", "q1dweb.exe"),
-    ("Q60网页", "q60web.exe"),
-]
+import numpy as np
+import pandas as pd
 
-# 用于保存已运行的exe进程
-running_procs = {}
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox,
+    QListWidget, QMessageBox, QAbstractItemView, QSplitter,
+    QCheckBox, QRadioButton, QButtonGroup, QDoubleSpinBox, QFileDialog,
+    QGroupBox
+)
 
-def run_exe(exe_name):
-    try:
-        # 启动exe，并保存进程对象
-        proc = subprocess.Popen([exe_name])
-        running_procs[exe_name] = proc
-    except Exception as e:
-        messagebox.showerror("错误", f"无法启动 {exe_name}\n{e}")
+import matplotlib
+matplotlib.use("Qt5Agg")
+import matplotlib.pyplot as plt
+from matplotlib import rcParams
+from matplotlib.figure import Figure
+import matplotlib.font_manager as fm
 
-def terminate_procs():
-    fail = []
-    for exe, proc in running_procs.items():
-        # 检查进程是否还在
-        if proc.poll() is None:
-            try:
-                # 使用 psutil 终止进程及其子进程
-                parent = psutil.Process(proc.pid)
-                for child in parent.children(recursive=True):
-                    child.terminate()
-                parent.terminate()
-            except Exception as e:
-                fail.append(exe)
-    running_procs.clear()
-    if fail:
-        messagebox.showwarning("警告", f"部分进程未能关闭: {fail}")
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+
+try:
+    from qfluentwidgets import (
+        FluentWindow,
+        FluentIcon,
+        setTheme,
+        Theme,
+        ScrollArea,
+        PushButton,
+        PrimaryPushButton,
+        ComboBox,
+        LineEdit,
+        CheckBox,
+        BodyLabel,
+        TitleLabel,
+        SimpleCardWidget,
+    )
+except Exception:
+    from qfluentwidgets import (
+        MSFluentWindow as FluentWindow,
+        FluentIcon,
+        setTheme,
+        Theme,
+        ScrollArea,
+        PushButton,
+        PrimaryPushButton,
+        ComboBox,
+        LineEdit,
+        CheckBox,
+        BodyLabel,
+        TitleLabel,
+        SimpleCardWidget,
+    )
+
+
+plt.style.use("default")
+
+
+def set_chinese_font():
+    candidates = []
+    if platform.system() == "Windows":
+        candidates = [
+            r"C:\Windows\Fonts\simhei.ttf",
+            r"C:\Windows\Fonts\msyh.ttc",
+            r"C:\Windows\Fonts\msyhbd.ttc",
+            r"C:\Windows\Fonts\simsun.ttc",
+        ]
+    elif platform.system() == "Darwin":
+        candidates = [
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        ]
     else:
-        messagebox.showinfo("提示", "所有已启动的进程已终止。")
+        candidates = [
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/arphic/ukai.ttc",
+        ]
 
-def jump_to_web():
-    webbrowser.open("http://127.0.0.1:5000")
+    chosen_name = "SimHei"
+    try:
+        fm.fontManager = fm._load_fontmanager(try_read_cache=False)
+    except Exception:
+        try:
+            fm.fontManager = fm.FontManager()
+        except Exception:
+            pass
 
-def create_gui():
-    root = tk.Tk()
-    root.title("科技感深蓝风GUI")
-    root.geometry("420x420")
-    root.configure(bg="#0c143d")
+    for fp in candidates:
+        if os.path.exists(fp):
+            try:
+                fm.fontManager.addfont(fp)
+                chosen_name = fm.FontProperties(fname=fp).get_name()
+                break
+            except Exception:
+                continue
 
-    style = ttk.Style()
-    style.theme_use('clam')
-    style.configure('Tech.TButton',
-                    font=('Segoe UI', 14, 'bold'),
-                    background='#113366',
-                    foreground='#40a9ff',
-                    borderwidth=2,
-                    focusthickness=3,
-                    focuscolor='none')
-    style.map('Tech.TButton',
-              background=[('active', '#1b2557')],
-              foreground=[('active', '#61dafb')])
+    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["font.sans-serif"] = ["SimHei", chosen_name, "Microsoft YaHei", "Noto Sans CJK SC", "DejaVu Sans"]
+    plt.rcParams["axes.unicode_minus"] = False
+    return chosen_name
 
-    title = tk.Label(root, text="深蓝科技感工具面板", bg="#0c143d",
-                     fg="#61dafb", font=("Segoe UI", 20, "bold"))
-    title.pack(pady=20)
 
-    btn_frame = tk.Frame(root, bg="#0c143d")
-    btn_frame.pack(pady=8)
+PREFERRED_APP_FONT = set_chinese_font()
+rcParams["font.family"] = "sans-serif"
+rcParams["font.sans-serif"] = ["SimHei", PREFERRED_APP_FONT, "Microsoft YaHei", "Noto Sans CJK SC", "DejaVu Sans"]
+rcParams["axes.unicode_minus"] = False
+plt.rcParams.update({"axes.grid": True, "grid.linestyle": "--", "grid.alpha": 0.35, "axes.spines.top": False, "figure.dpi": 120})
+warnings.filterwarnings("ignore", message=r"Glyph .* missing from font")
 
-    for i, (label, exe) in enumerate(button_info):
-        btn = ttk.Button(btn_frame, text=label, style='Tech.TButton',
-                         command=lambda exe=exe: run_exe(exe), width=16)
-        btn.grid(row=i//2, column=i%2, padx=18, pady=14)
 
-    # 终止进程按钮
-    stop_btn = ttk.Button(root, text="终止所有进程", style='Tech.TButton',
-                          command=terminate_procs, width=20)
-    stop_btn.pack(pady=12)
 
-    # 跳转网页按钮
-    jump_btn = ttk.Button(root, text="打开Web界面", style='Tech.TButton',
-                          command=jump_to_web, width=20)
-    jump_btn.pack(pady=4)
+# ====== 可调布局参数（UI 占比调节）======
+# 说明：只改下面这些数字即可快速调整页面占比与观感
+UI_TUNING = {
+    # 主窗口初始大小
+    "window_width": 1650,
+    "window_height": 1000,
 
-    root.mainloop()
+    # 功能页左右两列占比（left:right）
+    "function_left_stretch": 1,
+    "function_right_stretch": 1,
+
+    # 数据图表页：标题区与图表区比例（title+desc+toolbar : canvas）
+    # 值越大，图表区越高
+    "chart_canvas_stretch": 1,
+
+    # 数据图表页标题视觉参数
+    "chart_title_min_height": 36,
+    "chart_title_font_px": 24,
+
+    # 页面边距和控件间距
+    "page_margin": 12,
+    "page_spacing": 10,
+}
+
+def axis_group_key(var_name: str):
+    if not isinstance(var_name, str) or var_name == "":
+        return var_name
+    m = re.match(r"^([A-Za-z\u4e00-\u9fff]+)", var_name)
+    return m.group(1) if m else var_name
+
+
+class DataProcessor:
+    def __init__(self):
+        self.file_path = None
+        self.sheet_name = None
+        self.variables = {}
+        self.length = 0
+
+    def get_sheet_names(self, file_path):
+        return pd.ExcelFile(file_path).sheet_names
+
+    def load_from_excel(self, file_path, sheet_name):
+        try:
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
+            if df.shape[1] == 0:
+                return False, "工作表中没有列"
+            self.variables = {}
+            for col in df.columns:
+                ser = df[col]
+                ser_num = pd.to_numeric(ser, errors="coerce")
+                self.variables[str(col)] = ser_num.to_numpy() if ser_num.notna().any() else ser.astype(str).tolist()
+            self.file_path = file_path
+            self.sheet_name = sheet_name
+            self.length = int(df.shape[0])
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def get_variable_names(self):
+        return list(self.variables.keys())
+
+    def get_variable_data(self, variable_name):
+        return self.variables.get(variable_name, [])
+
+    def get_data_length(self):
+        return self.length
+
+
+class PlotCanvas(FigureCanvas):
+    def __init__(self, parent_window=None):
+        self.figure = Figure(facecolor="white", dpi=110)
+        super().__init__(self.figure)
+        self.parent_window = parent_window
+        self._plot_storage = {}
+        self._legend_map = {}
+        self.axes_list = []
+        self._axis_outward = {}
+        self.mpl_connect("pick_event", self._on_pick)
+
+    def _on_pick(self, event):
+        artist = event.artist
+        if artist in self._legend_map:
+            orig = self._legend_map[artist]
+            orig.set_visible(not orig.get_visible())
+            self.draw_idle()
+
+    def _update_axis_positions(self):
+        for i, ax in enumerate(self.axes_list[1:], start=1):
+            ax.spines["right"].set_position(("outward", self._axis_outward.get(i, 0)))
+
+    def _apply_axis_ranges(self, axis_ranges):
+        if not axis_ranges:
+            return
+        if "x" in axis_ranges and self.axes_list:
+            xr = axis_ranges["x"]
+            if not xr.get("auto", True):
+                xmin, xmax = float(xr["min"]), float(xr["max"])
+                if xmin < xmax:
+                    self.axes_list[0].set_xlim(xmin, xmax)
+        for idx in range(len(self.axes_list)):
+            if idx in axis_ranges:
+                yr = axis_ranges[idx]
+                if not yr.get("auto", True):
+                    ymin, ymax = float(yr["min"]), float(yr["max"])
+                    if ymin < ymax:
+                        self.axes_list[idx].set_ylim(ymin, ymax)
+
+    def draw_plot(self, x_data, y_data_dict, x_label, title_text, y_axis_name,
+                  start_idx, end_idx, show_grid=True, plot_mode="scatter", axis_ranges=None):
+        self.figure.clear()
+        self._plot_storage.clear()
+        self._legend_map.clear()
+        self._axis_outward.clear()
+        self.axes_list = []
+
+        x_slice = np.asarray(x_data)[start_idx:end_idx + 1]
+        ax_main = self.figure.add_subplot(111)
+        self.axes_list.append(ax_main)
+        colors = ["#2563EB", "#F59E0B", "#10B981", "#7C3AED", "#DC2626", "#0284C7", "#64748B"]
+
+        groups = {}
+        for name in y_data_dict:
+            groups.setdefault(axis_group_key(name), []).append(name)
+
+        handles, labels, axis_group_keys = [], [], []
+        for gi, (group_key, var_names) in enumerate(groups.items()):
+            axis_group_keys.append(group_key)
+            ax = ax_main if gi == 0 else ax_main.twinx()
+            if gi > 0:
+                self._axis_outward[gi] = 70 * (gi - 1)
+                ax.spines["right"].set_position(("outward", self._axis_outward[gi]))
+                self.axes_list.append(ax)
+
+            for vi, var in enumerate(var_names):
+                y_slice = np.asarray(y_data_dict[var])[start_idx:end_idx + 1]
+                color = colors[(gi * 2 + vi) % len(colors)]
+                line_obj = None
+                scatter_obj = None
+                if plot_mode in ("line", "line_scatter"):
+                    line_obj, = ax.plot(x_slice, y_slice, color=color, linewidth=2.0, alpha=0.9, label=var)
+                if plot_mode in ("scatter", "line_scatter"):
+                    scatter_obj = ax.scatter(x_slice, y_slice, s=46, facecolor=color, edgecolor="white", linewidth=0.8, alpha=0.9, label=var)
+                obj = scatter_obj if scatter_obj is not None else line_obj
+                self._plot_storage[var] = (x_slice, y_slice, ax, obj)
+                handles.append(obj)
+                labels.append(var)
+
+            custom_axis_label = self.parent_window.get_axis_custom_label(gi) if self.parent_window else None
+            axis_label_text = custom_axis_label or (y_axis_name if gi == 0 else f"{y_axis_name}-{group_key}")
+            ax.set_ylabel(axis_label_text, fontsize=12, fontweight="bold")
+
+        ax_main.set_xlabel(x_label, fontsize=12, fontweight="bold")
+        ax_main.set_title(title_text, fontsize=14, fontweight="bold", pad=10)
+        if show_grid:
+            ax_main.grid(True, linestyle="--", linewidth=0.7, alpha=0.35)
+
+        legend = ax_main.legend(handles, labels, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, fontsize=9)
+        legend.set_draggable(True)
+        legend_handles = getattr(legend, "legendHandles", None) or getattr(legend, "legend_handles", [])
+        for lh, lab in zip(legend_handles, labels):
+            lh.set_picker(True)
+            self._legend_map[lh] = self._plot_storage[lab][3]
+
+        if self.parent_window:
+            self.parent_window.update_axis_offset_controls(self._axis_outward, axis_group_keys)
+            self.parent_window.populate_axis_selector(axis_group_keys)
+
+        self._update_axis_positions()
+        self._apply_axis_ranges(axis_ranges or {})
+        self.figure.tight_layout(rect=[0, 0, 0.85, 1])
+        self.draw()
+
+
+
+
+class DataChartPage(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("dataChartPage")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"])
+        layout.setSpacing(UI_TUNING["page_spacing"])
+
+        card = SimpleCardWidget(self)
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"])
+        cl.setSpacing(UI_TUNING["page_spacing"])
+
+        title = TitleLabel("数据图表页", self)
+        title.setMinimumHeight(UI_TUNING["chart_title_min_height"])
+        title.setStyleSheet(f"font-size: {UI_TUNING['chart_title_font_px']}px; font-weight: 700;")
+        desc = BodyLabel("图表会展示在此页面。请到“功能页”加载数据并点击生成图表。", self)
+        cl.addWidget(title, 0)
+        cl.addWidget(desc, 0)
+
+        self.plot_canvas = PlotCanvas(parent_window=None)
+        self.toolbar = NavigationToolbar(self.plot_canvas, self)
+        cl.addWidget(self.toolbar, 0)
+        cl.addWidget(self.plot_canvas, UI_TUNING["chart_canvas_stretch"])
+        layout.addWidget(card)
+
+
+class ExcelVisualizerPage(QWidget):
+    def __init__(self, chart_page, parent=None):
+        super().__init__(parent)
+        self.setObjectName("functionPage")
+        self.chart_page = chart_page
+        self.data_processor = DataProcessor()
+        self.range_widgets = {}
+        self.axis_name_edits = {}
+        self._build_ui()
+
+    def _build_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"])
+        main_layout.setSpacing(UI_TUNING["page_spacing"])
+        self.control_panel = self.create_control_panel()
+        main_layout.addWidget(self.control_panel)
+
+        self.setStyleSheet("""
+            QWidget { background: #F3F4F6; color: #0F172A; }
+            QGroupBox { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; margin-top: 10px; padding: 8px; color: #1F2937; font-weight: 600; }
+            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; }
+        """)
+
+    def create_control_panel(self):
+        scroll = ScrollArea(self)
+        scroll.setWidgetResizable(True)
+        panel = QWidget(); scroll.setWidget(panel)
+        root = QHBoxLayout(panel)
+        root.setContentsMargins(UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"], UI_TUNING["page_margin"])
+        root.setSpacing(UI_TUNING["page_spacing"])
+
+        left_col = QVBoxLayout()
+        left_col.setSpacing(UI_TUNING["page_spacing"])
+        right_col = QVBoxLayout()
+        right_col.setSpacing(UI_TUNING["page_spacing"])
+
+        self.file_label = LineEdit(); self.file_label.setReadOnly(True); self.file_label.setPlaceholderText("未选择文件")
+        btn_file = PrimaryPushButton("选择 Excel 文件", self); btn_file.clicked.connect(self.choose_excel_file)
+        self.sheet_combo = ComboBox(self)
+        btn_load = PushButton("读取 Sheet", self); btn_load.clicked.connect(self.load_selected_sheet)
+
+        self.title_edit = LineEdit(self); self.title_edit.setText("科学数据可视化")
+        self.xname_edit = LineEdit(self); self.xname_edit.setText("X 轴")
+        self.yname_edit = LineEdit(self); self.yname_edit.setText("Y 轴")
+        self.mode_combo = ComboBox(self); self.mode_combo.addItems(["散点图", "折线图", "折线+散点图"])
+        self.start_spin = QSpinBox(self); self.end_spin = QSpinBox(self)
+        self.x_combo = ComboBox(self)
+        self.y_list = QListWidget(self); self.y_list.setSelectionMode(QAbstractItemView.MultiSelection); self.y_list.setMinimumHeight(180)
+        self.grid_cb = CheckBox("显示网格", self); self.grid_cb.setChecked(True)
+
+        self.axis_button_group = QButtonGroup(self)
+        self.axis_radio_buttons = []
+        self.axis_radio_layout = QVBoxLayout()
+        self.offsets_layout = QVBoxLayout()
+        self.axis_name_layout = QVBoxLayout()
+
+        def pack(container, title, items):
+            box = QGroupBox(title); bl = QVBoxLayout(box)
+            for it in items:
+                if isinstance(it, (QHBoxLayout, QVBoxLayout)): bl.addLayout(it)
+                else: bl.addWidget(it)
+            container.addWidget(box)
+
+        r1 = QHBoxLayout(); r1.addWidget(btn_file); r1.addWidget(self.file_label, 1)
+        r2 = QHBoxLayout(); r2.addWidget(QLabel("Sheet:")); r2.addWidget(self.sheet_combo, 1); r2.addWidget(btn_load)
+        pack(left_col, "数据源", [r1, r2])
+        pack(left_col, "标题与坐标轴", [self.title_edit, self.xname_edit, self.yname_edit])
+        pack(left_col, "图型", [self.mode_combo])
+        pack(left_col, "数据索引", [self.start_spin, self.end_spin])
+
+        pack(right_col, "变量选择", [self.x_combo, self.y_list])
+        pack(right_col, "网格", [self.grid_cb])
+        pack(right_col, "活动轴", [self.axis_radio_layout])
+        pack(right_col, "轴偏移", [self.offsets_layout])
+        pack(right_col, "Y轴重命名", [self.axis_name_layout])
+
+        btn_row = QHBoxLayout()
+        btn_plot = PrimaryPushButton("生成图表", self); btn_plot.clicked.connect(self.plot_data)
+        btn_save = PushButton("保存无损图片", self); btn_save.clicked.connect(self.save_figure_lossless)
+        btn_row.addWidget(btn_plot); btn_row.addWidget(btn_save)
+        right_col.addLayout(btn_row)
+        right_col.addStretch(1)
+
+        root.addLayout(left_col, UI_TUNING["function_left_stretch"])
+        root.addLayout(right_col, UI_TUNING["function_right_stretch"])
+        return scroll
+
+    def choose_excel_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "选择 Excel 文件", "", "Excel 文件 (*.xlsx *.xls)")
+        if not path:
+            return
+        self.file_label.setText(path)
+        try:
+            self.sheet_combo.clear(); self.sheet_combo.addItems(self.data_processor.get_sheet_names(path))
+        except Exception as e:
+            QMessageBox.critical(self, "错误", str(e))
+
+    def load_selected_sheet(self):
+        file_path = self.file_label.text().strip()
+        sheet = self.sheet_combo.currentText().strip()
+        if not file_path or file_path == "未选择文件" or not sheet:
+            QMessageBox.warning(self, "提示", "请先选择 Excel 文件和 Sheet")
+            return
+        ok, err = self.data_processor.load_from_excel(file_path, sheet)
+        if not ok:
+            QMessageBox.critical(self, "错误", f"读取失败: {err}")
+            return
+        names = self.data_processor.get_variable_names()
+        length = self.data_processor.get_data_length()
+        self.start_spin.setMaximum(max(0, length - 1)); self.start_spin.setValue(0)
+        self.end_spin.setMaximum(max(0, length - 1)); self.end_spin.setValue(max(0, length - 1))
+        self.x_combo.clear(); self.x_combo.addItems(names)
+        self.y_list.clear(); self.y_list.addItems(names)
+
+    def populate_axis_selector(self, axis_group_keys):
+        for b in self.axis_radio_buttons:
+            self.axis_button_group.removeButton(b); b.setParent(None)
+        self.axis_radio_buttons.clear()
+        for idx, name in enumerate(axis_group_keys):
+            rb = QRadioButton(f"轴{idx}-{name}"); rb.setChecked(idx == 0)
+            self.axis_button_group.addButton(rb, idx)
+            self.axis_radio_layout.addWidget(rb)
+            self.axis_radio_buttons.append(rb)
+
+    def update_axis_offset_controls(self, offsets_dict, axis_group_keys):
+        while self.offsets_layout.count():
+            item = self.offsets_layout.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+        for idx in range(1, len(axis_group_keys)):
+            row = QWidget(); hl = QHBoxLayout(row); hl.setContentsMargins(0, 0, 0, 0)
+            hl.addWidget(BodyLabel(f"轴{idx}({axis_group_keys[idx]})", self))
+            sp = QSpinBox(self); sp.setRange(0, 2000); sp.setValue(offsets_dict.get(idx, 70 * (idx - 1)))
+            sp.valueChanged.connect(lambda v, i=idx: self._set_axis_offset(i, v)); hl.addWidget(sp)
+            self.offsets_layout.addWidget(row)
+        self._build_axis_name_controls(axis_group_keys)
+
+    def _build_axis_name_controls(self, axis_group_keys):
+        while self.axis_name_layout.count():
+            item = self.axis_name_layout.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+        old_values = {k: v.text().strip() for k, v in self.axis_name_edits.items()}
+        self.axis_name_edits.clear()
+        for idx, name in enumerate(axis_group_keys):
+            row = QWidget(); hl = QHBoxLayout(row); hl.setContentsMargins(0, 0, 0, 0)
+            hl.addWidget(BodyLabel(f"轴{idx}:", self))
+            edit = LineEdit(self)
+            edit.setPlaceholderText(f"默认: {self.yname_edit.text().strip() or 'Y'}{'-' + name if idx > 0 else ''}")
+            if idx in old_values: edit.setText(old_values[idx])
+            hl.addWidget(edit)
+            self.axis_name_layout.addWidget(row)
+            self.axis_name_edits[idx] = edit
+
+    def get_axis_custom_label(self, axis_index):
+        edit = self.axis_name_edits.get(axis_index)
+        if not edit:
+            return None
+        txt = edit.text().strip()
+        return txt if txt else None
+
+    def _set_axis_offset(self, idx, val):
+        self.chart_page.plot_canvas._axis_outward[idx] = int(val)
+        self.chart_page.plot_canvas._update_axis_positions()
+        self.chart_page.plot_canvas.draw_idle()
+
+    def _gather_axis_ranges_from_ui(self):
+        return {}
+
+    def plot_data(self):
+        s, e = self.start_spin.value(), self.end_spin.value()
+        if s > e:
+            QMessageBox.warning(self, "错误", "起始索引不能大于结束索引")
+            return
+        xvar = self.x_combo.currentText().strip(); yitems = self.y_list.selectedItems()
+        if not xvar or not yitems:
+            QMessageBox.warning(self, "错误", "请先选择 X 与至少一个 Y")
+            return
+        xdata = np.asarray(self.data_processor.get_variable_data(xvar))
+        ydict = {it.text(): np.asarray(self.data_processor.get_variable_data(it.text())) for it in yitems}
+        max_idx = min([len(xdata) - 1] + [len(v) - 1 for v in ydict.values()])
+        if e > max_idx:
+            e = max_idx
+            self.end_spin.setValue(e)
+        mode_map = {"散点图": "scatter", "折线图": "line", "折线+散点图": "line_scatter"}
+        self.chart_page.plot_canvas.parent_window = self
+        self.chart_page.plot_canvas.draw_plot(xdata, ydict, self.xname_edit.text().strip() or xvar,
+                                              self.title_edit.text().strip() or "科学数据可视化",
+                                              self.yname_edit.text().strip() or "Y", s, e,
+                                              show_grid=self.grid_cb.isChecked(),
+                                              plot_mode=mode_map.get(self.mode_combo.currentText(), "scatter"),
+                                              axis_ranges=self._gather_axis_ranges_from_ui())
+
+    def save_figure_lossless(self):
+        if not self.chart_page.plot_canvas.figure.axes:
+            QMessageBox.warning(self, "提示", "请先生成图表")
+            return
+        path, selected_filter = QFileDialog.getSaveFileName(self, "保存无损图片", "plot.png",
+                                                            "PNG 无损位图 (*.png);;TIFF 无损位图 (*.tiff);;SVG 矢量图 (*.svg);;PDF 矢量图 (*.pdf)")
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            if "TIFF" in selected_filter: path += ".tiff"
+            elif "SVG" in selected_filter: path += ".svg"
+            elif "PDF" in selected_filter: path += ".pdf"
+            else: path += ".png"
+        ext = os.path.splitext(path)[1].lower()
+        fmt = {".png": "png", ".tif": "tiff", ".tiff": "tiff", ".svg": "svg", ".pdf": "pdf"}.get(ext)
+        if fmt is None:
+            QMessageBox.warning(self, "提示", "请保存为 PNG / TIFF / SVG / PDF")
+            return
+        self.chart_page.plot_canvas.figure.savefig(path, dpi=300, format=fmt, bbox_inches="tight", pad_inches=0.05, facecolor="white", edgecolor="white")
+
+
+class MainWindow(FluentWindow):
+    def __init__(self):
+        super().__init__()
+        self.chart_page = DataChartPage(self)
+        self.function_page = ExcelVisualizerPage(self.chart_page, self)
+        self.addSubInterface(self.chart_page, FluentIcon.LIBRARY, "数据图表")
+        self.addSubInterface(self.function_page, FluentIcon.SETTING, "功能页")
+        self.setWindowTitle("Excel 数据可视化")
+        self.setWindowIcon(QIcon())
+        self.resize(UI_TUNING["window_width"], UI_TUNING["window_height"])
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setApplicationName("Excel 数据可视化")
+    app.setFont(QFont("Microsoft YaHei", 10))
+    setTheme(Theme.LIGHT)
+    wnd = MainWindow()
+    wnd.show()
+    sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
-    create_gui()
+    main()
