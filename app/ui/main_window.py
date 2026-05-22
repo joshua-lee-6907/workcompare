@@ -1,11 +1,11 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QListWidget, QStackedWidget, QStatusBar, QLabel, QProgressBar, QAction, QMessageBox, QSystemTrayIcon, QMenu
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
-from app.ui.pages.dashboard_page import DashboardPage
-from app.ui.pages.business_page import BusinessPage
-from app.ui.pages.history_page import HistoryPage
-from app.ui.pages.settings_page import SettingsPage
-from app.core.worker import CoreWorker
+from ui.pages.dashboard_page import DashboardPage
+from ui.pages.business_page import BusinessPage
+from ui.pages.history_page import HistoryPage
+from ui.pages.settings_page import SettingsPage
+from core.worker import CoreWorker
 
 
 class MainWindow(QMainWindow):
